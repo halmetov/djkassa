@@ -1,10 +1,9 @@
 import axios from "axios";
 import { clearTokens, getTokens, setTokens } from "./auth";
-
-const baseURL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+import { BASE_URL } from "../config/api";
 
 export const api = axios.create({
-  baseURL,
+  baseURL: BASE_URL,
 });
 
 let isRefreshing = false;

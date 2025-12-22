@@ -11,12 +11,12 @@ class DashboardView(APIView):
     Простой dashboard с суммами заказов и долгов.
     """
 
-    async def get(self, request, *args, **kwargs):
-        orders_total_data = await Order.objects.aaggregate(sum=Sum("total"))
-        debts_total_data = await CustomerDebt.objects.aaggregate(sum=Sum("amount"))
+    def get(self, request, *args, **kwargs):
+        orders_total_data = Order.objects.aggregate(sum=Sum("total"))
+        debts_total_data = CustomerDebt.objects.aggregate(sum=Sum("amount"))
         orders_total = orders_total_data.get("sum") or Decimal("0")
         debts_total = debts_total_data.get("sum") or Decimal("0")
-        stock_count = await Stock.objects.acount()
+        stock_count = Stock.objects.count()
 
         return Response(
             {
