@@ -1,9 +1,8 @@
 from django.contrib.auth import get_user_model
 from rest_framework import status, viewsets
 from rest_framework.response import Response
-from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from core.models import Role, Employee, Branch
 from users.serializers import RoleSerializer, EmployeeSerializer
@@ -12,22 +11,12 @@ from users import services
 User = get_user_model()
 
 
-class AuthTokenObtainPairView(APIView):
+class AuthTokenObtainPairView(TokenObtainPairView):
     permission_classes = [AllowAny]
 
-    async def post(self, request, *args, **kwargs):
-        serializer = TokenObtainPairSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
-
-class AuthTokenRefreshView(APIView):
+class AuthTokenRefreshView(TokenRefreshView):
     permission_classes = [AllowAny]
-
-    async def post(self, request, *args, **kwargs):
-        serializer = TokenRefreshSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
 
 class RoleViewSet(viewsets.ViewSet):

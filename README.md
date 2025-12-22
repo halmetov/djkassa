@@ -43,6 +43,28 @@ python manage.py runserver 0.0.0.0:8000
 - OpenAPI схема: `http://localhost:8000/api/schema/`
 - Swagger UI: `http://localhost:8000/api/schema/swagger/`
 - Базовые маршруты размещены под `/api/v1/`.
+- JWT: `POST http://localhost:8000/api/v1/auth/token/` (только POST, GET вернёт 405)
+- Обновление токена: `POST http://localhost:8000/api/v1/auth/token/refresh/`
+- Пример получения токена:
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/token/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin"}'
+```
+- Пример авторизованного запроса (список клиентов):
+```bash
+curl http://localhost:8000/api/v1/customers/ \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+## Frontend (Vite + React)
+- Код расположен в `frontend/`. Используется единый `baseURL` для API: `/api/v1` (или из `VITE_API_BASE_URL`).\
+  При запуске dev-сервера настроен прокси на `http://localhost:8000/api`.
+- Установка зависимостей: `cd frontend && npm install`
+- Запуск dev: `npm run dev`
+- Сборка: `npm run build`
+- Переменные окружения:
+  - `VITE_API_BASE_URL` — базовый путь к API (по умолчанию `/api/v1`). Пример: `http://localhost:8000/api/v1`
 
 ## Тесты
 ```bash
