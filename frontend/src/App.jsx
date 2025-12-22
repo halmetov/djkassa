@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchCustomers, login, logout } from "./api/client";
 import { getTokens, isAuthenticated } from "./api/auth";
+import { BASE_URL } from "./config/api";
 
 const defaultForm = { username: "", password: "" };
 
@@ -73,7 +74,7 @@ function App() {
     <div className="app">
       <div className="header">
         <h1>Kassa Frontend (Vite + React)</h1>
-        <div className="badge">API: {import.meta.env.VITE_API_BASE_URL || "/api/v1"}</div>
+        <div className="badge">API: {BASE_URL}</div>
       </div>
 
       <div className="grid">

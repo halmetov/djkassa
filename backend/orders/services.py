@@ -18,9 +18,9 @@ def _compute_payment_status(total: Decimal, paid: Decimal) -> str:
     return "paid"
 
 
-async def create_order(*, user, branch, customer: Customer | None, items_data, discount: Decimal, manual_extra: Decimal, note: str = "") -> Order:
-    async with transaction.async_atomic():
-        order = await Order.objects.acreate(
+def create_order(*, user, branch, customer: Customer | None, items_data, discount: Decimal, manual_extra: Decimal, note: str = "") -> Order:
+    with transaction.atomic():
+        order = Order.objects.create(
             branch=branch,
             customer=customer,
             created_by=user,
@@ -39,30 +39,30 @@ async def create_order(*, user, branch, customer: Customer | None, items_data, d
             price = to_decimal(item["price"])
             line_total = qty * price
             total += line_total
-            await OrderItem.objects.acreate(order=order, product=item["product"], qty=qty, price=price, line_total=line_total)
+            OrderItem.objects.create(order=order, product=item["product"], qty=qty, price=price, line_total=line_total)
         total = total - discount + manual_extra
         order.total = total
         order.payment_status = _compute_payment_status(total, order.paid_amount)
         order.debt_amount = total - order.paid_amount
-        await order.asave(update_fields=["total", "payment_status", "debt_amount"])
+        order.save(update_fields=["total", "payment_status", "debt_amount"])
     return order
 
 
-async def add_payment(order: Order, *, user, method: str, amount: Decimal) -> Payment:
-    async with transaction.async_atomic():
-        payment = await Payment.objects.acreate(order=order, created_by=user, method=method, amount=amount)
+def add_payment(order: Order, *, user, method: str, amount: Decimal) -> Payment:
+    with transaction.atomic():
+        payment = Payment.objects.create(order=order, created_by=user, method=method, amount=amount)
         order.paid_amount += amount
         order.debt_amount = max(order.total - order.paid_amount, Decimal("0.00"))
         order.payment_status = _compute_payment_status(order.total, order.paid_amount)
-        await order.asave(update_fields=["paid_amount", "debt_amount", "payment_status"])
+        order.save(update_fields=["paid_amount", "debt_amount", "payment_status"])
     return payment
 
 
-async def ensure_debt(order: Order) -> CustomerDebt:
+def ensure_debt(order: Order) -> CustomerDebt:
     customer = order.customer
     if not customer:
         raise ValueError("Для создания долга нужен клиент")
-    debt, _ = await CustomerDebt.objects.aget_or_create(
+    debt, _ = CustomerDebt.objects.get_or_create(
         order=order, defaults={"customer": customer, "amount": order.debt_amount}
     )
     updated = False
@@ -75,17 +75,17 @@ async def ensure_debt(order: Order) -> CustomerDebt:
         debt.amount = Decimal("0.00")
         updated = True
     if updated:
-        await debt.asave(update_fields=["amount", "is_closed", "closed_at"])
+        debt.save(update_fields=["amount", "is_closed", "closed_at"])
     return debt
 
 
-async def add_debt_payment(debt: CustomerDebt, *, user, amount: Decimal) -> DebtPayment:
-    async with transaction.async_atomic():
-        payment = await DebtPayment.objects.acreate(debt=debt, created_by=user, amount=amount)
+def add_debt_payment(debt: CustomerDebt, *, user, amount: Decimal) -> DebtPayment:
+    with transaction.atomic():
+        payment = DebtPayment.objects.create(debt=debt, created_by=user, amount=amount)
         debt.amount -= amount
         if debt.amount <= 0:
             debt.is_closed = True
             debt.closed_at = timezone.now()
             debt.amount = Decimal("0.00")
-        await debt.asave(update_fields=["amount", "is_closed", "closed_at"])
+        debt.save(update_fields=["amount", "is_closed", "closed_at"])
     return payment
