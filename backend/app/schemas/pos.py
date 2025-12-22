@@ -1,0 +1,20 @@
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel
+
+
+class PosProduct(BaseModel):
+    id: int
+    name: str
+    barcode: Optional[str]
+    sale_price: float
+    unit: str
+    branch_id: Optional[int]
+    branch_name: Optional[str]
+    quantity: int
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+

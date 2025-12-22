@@ -1,73 +1,57 @@
-# Kassa Skald Backend (Django 5 + DRF)
+# Kassa (Склад + Касса)
 
-Асинхронный backend для "КАССА СКЛАД" на Django 5.x с DRF, SimpleJWT и drf-spectacular. Репозиторий содержит приложения для склада, заказов, долгов, отчетов и пользователей.
+Полноценный моно-репозиторий с FastAPI backend и Vite + React frontend.
 
 ## Структура
+
 ```
-backend/
-  manage.py
-  kassa_project/
-  core/           # базовые модели
-  common/         # permissions, utils, exceptions
-  users/          # роли, сотрудники, auth
-  warehouse/      # товары, склады, движения
-  orders/         # заказы, оплаты, долги
-  reports/        # дашборд
-  api/            # v1 маршруты
+/backend
+  app/
+    api, models, schemas, services, auth, database
+  migrations/
+  requirements.txt
+/frontend
+  package.json, vite.config.ts, src/
 ```
 
-## Установка
-```bash
-python -m venv .venv
-source .venv/bin/activate  # или .venv\\Scripts\\activate в Windows
-pip install -r backend/requirements.txt
-```
+## Backend
 
-## Переменные окружения
-Создайте файл `.env` (опционально) или передайте переменные напрямую:
-- `DJANGO_SECRET_KEY` — секретный ключ.
-- `DJANGO_DEBUG` — `true/false`.
-- `DJANGO_ALLOWED_HOSTS` — список хостов через запятую.
-- `DATABASE_URL` — строка подключения (PostgreSQL). Если отсутствует, берутся переменные `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`. По умолчанию используется SQLite.
-- `JWT_ACCESS_MINUTES`, `JWT_REFRESH_DAYS` — время жизни токенов.
+### Быстрый старт
 
-## Миграции и запуск
 ```bash
 cd backend
-python manage.py migrate
-python manage.py createsuperuser
-python manage.py runserver 0.0.0.0:8000
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env  # настройте DATABASE_URL и JWT_SECRET_KEY
+alembic upgrade head
+uvicorn app.main:app --reload
 ```
 
-## Swagger и API
-- OpenAPI схема: `http://localhost:8000/api/schema/`
-- Swagger UI: `http://localhost:8000/api/schema/swagger/`
-- Базовые маршруты размещены под `/api/v1/`.
-- JWT: `POST http://localhost:8000/api/v1/auth/token/` (только POST, GET вернёт 405)
-- Обновление токена: `POST http://localhost:8000/api/v1/auth/token/refresh/`
-- Пример получения токена:
+### Возможности
+
+- JWT (access + refresh) авторизация и проверки ролей (admin/seller)
+- CRUD для категорий, товаров, сотрудников, филиалов, клиентов
+- Приходы с автоматическим обновлением склада
+- Продажи (POS API) c учётом остатков и долгов
+- Возвраты, отчёты, статические загрузки фото
+- Alembic миграции и модульная структура сервисов
+
+API доступен по `http://localhost:8000`, статические файлы — `/static`.
+
+## Frontend
+
+### Быстрый старт
+
 ```bash
-curl -X POST http://localhost:8000/api/v1/auth/token/ \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin"}'
-```
-- Пример авторизованного запроса (список клиентов):
-```bash
-curl http://localhost:8000/api/v1/customers/ \
-  -H "Authorization: Bearer <ACCESS_TOKEN>"
+cd frontend
+npm install
+npm run dev
 ```
 
-## Frontend (Vite + React)
-- Код расположен в `frontend/`. Используется единый `baseURL` для API: `/api/v1` (или из `VITE_API_BASE_URL`).\
-  При запуске dev-сервера настроен прокси на `http://localhost:8000/api`.
-- Установка зависимостей: `cd frontend && npm install`
-- Запуск dev: `npm run dev`
-- Сборка: `npm run build`
-- Переменные окружения:
-  - `VITE_API_BASE_URL` — базовый путь к API (по умолчанию `/api/v1`). Пример: `http://localhost:8000/api/v1`
+Vite поднимет SPA на `http://localhost:5173`. В `.env` приложения можно указать `VITE_API_URL` (по умолчанию `http://localhost:8000`).
 
-## Тесты
-```bash
-cd backend
-python manage.py test
-```
+## Дополнительно
+
+- В каталоге `backend/app/static/uploads` сохраняются фото товаров.
+- Схема базы данных покрывает таблицы: `users, categories, products, branches, stock, income, income_items, sales, sales_items, clients, debts, returns, logs`.
+- Для интеграции с мобильной кассой используйте endpoints `/api/sales`, `/api/categories`, `/api/products`.

@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
+*.sqlite
+*.db
+app/static/uploads/
+alembic.ini.bak
+
+# Alembic cache
+migrations/versions/__pycache__/
