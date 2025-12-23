@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useOutletContext } from "react-router-dom";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 
 export default function Branches() {
+  const { isAdmin } = useOutletContext<{ isAdmin: boolean }>();
   const [branches, setBranches] = useState<{ id: number; name: string; address?: string | null; active: boolean }[]>([]);
   const [newBranch, setNewBranch] = useState("");
   const [newAddress, setNewAddress] = useState("");
@@ -32,9 +34,9 @@ export default function Branches() {
     try {
       const data = await apiGet<{ id: number; name: string; address?: string | null; active: boolean }[]>("/api/branches");
       setBranches(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Ошибка загрузки филиалов");
+      toast.error(error?.message || "Ошибка загрузки филиалов");
     }
   };
 
@@ -48,9 +50,9 @@ export default function Branches() {
         active: true,
       });
       toast.success("Филиал добавлен");
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Ошибка добавления филиала");
+      toast.error(error?.message || "Ошибка добавления филиала");
       return;
     }
     setNewBranch("");
@@ -75,9 +77,14 @@ export default function Branches() {
       toast.success("Филиал обновлен");
       setEditingId(null);
       fetchBranches();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Ошибка обновления");
+      const status = (error as any)?.status;
+      if (status === 403) {
+        toast.error("Недостаточно прав");
+      } else {
+        toast.error(error?.message || "Ошибка обновления");
+      }
     }
   };
 
@@ -86,9 +93,14 @@ export default function Branches() {
       await apiDelete(`/api/branches/${id}`);
       toast.success("Филиал удален");
       fetchBranches();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Ошибка удаления");
+      const status = (error as any)?.status;
+      if (status === 403) {
+        toast.error("Недостаточно прав");
+      } else {
+        toast.error(error?.message || "Ошибка удаления");
+      }
     }
   };
 
@@ -163,43 +175,45 @@ export default function Branches() {
                   )}
                 </TableCell>
                 <TableCell>
-                  <div className="flex gap-2">
-                    {editingId === branch.id ? (
-                      <>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleSave(branch.id)}
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => setEditingId(null)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleEdit(branch)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleDelete(branch.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
+                  {isAdmin && (
+                    <div className="flex gap-2">
+                      {editingId === branch.id ? (
+                        <>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleSave(branch.id)}
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setEditingId(null)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleEdit(branch)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleDelete(branch.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

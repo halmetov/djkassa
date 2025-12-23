@@ -11,6 +11,7 @@ export const Layout = () => {
   const [open, setOpen] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [lowStockCount, setLowStockCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
@@ -23,20 +24,44 @@ export const Layout = () => {
     "/returns",
     "/categories",
     "/products",
+    "/movements",
     "/clients",
+    "/employees",
+    "/branches",
   ];
 
   const toggleSidebar = () => setIsSidebarOpen((prev) => !prev);
   const closeSidebar = () => setIsSidebarOpen(false);
 
   useEffect(() => {
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem("sidebar-open") : null;
+    if (saved !== null) {
+      setOpen(saved === "true");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("sidebar-open", String(open));
+    }
+  }, [open]);
+
+  useEffect(() => {
     const checkAuth = async () => {
-      const authUser = await getCurrentUser();
-      if (!authUser) {
+      try {
+        const authUser = await getCurrentUser();
+        if (!authUser) {
+          setIsLoadingUser(false);
+          navigate('/auth');
+          return;
+        }
+        setUser(authUser);
+      } catch (error: any) {
+        console.error("Failed to load current user", error);
         navigate('/auth');
-        return;
+      } finally {
+        setIsLoadingUser(false);
       }
-      setUser(authUser);
     };
 
     checkAuth();
@@ -51,6 +76,8 @@ export const Layout = () => {
   useEffect(() => {
     setIsSidebarOpen(false);
   }, [location.pathname]);
+
+  const isAdmin = user?.role === "admin";
 
   useEffect(() => {
     const loadLowStock = async () => {
@@ -72,12 +99,13 @@ export const Layout = () => {
       <div className="min-h-screen flex w-full bg-background">
         <AppSidebar
           user={user}
+          isLoadingUser={isLoadingUser}
           lowStockCount={lowStockCount}
           isOpen={isSidebarOpen}
           onClose={closeSidebar}
         />
         <main className="flex-1 flex flex-col">
-          <header className="h-14 border-b bg-card flex items-center px-4 lg:px-6 md:hidden">
+          <header className="h-14 border-b bg-card flex items-center px-4 lg:px-6">
             <Button
               variant="ghost"
               size="icon"
@@ -89,9 +117,17 @@ export const Layout = () => {
             >
               <Menu className="h-5 w-5" />
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden md:inline-flex"
+              onClick={() => setOpen((prev) => !prev)}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
           </header>
           <div className="flex-1 p-4 lg:p-6">
-            <Outlet />
+            <Outlet context={{ user, isAdmin }} />
           </div>
         </main>
       </div>

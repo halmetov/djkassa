@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     media_root: str = "app/static/uploads"
     vite_host: str | None = None
     vite_port: int | None = None
+    sale_branch_name: str = "Магазин"
 
     environment: str = "dev"
     auto_run_migrations: bool = True
@@ -59,13 +60,14 @@ class Settings(BaseSettings):
             "http://127.0.0.1:8080",
             "http://localhost:5173",
             "http://127.0.0.1:5173",
+            "https://samen.inbrain.kz",
         ]
+
 
     @property
     def allowed_cors_regex(self) -> str | None:
-        if self.cors_origin_regex:
-            return self.cors_origin_regex
-        return r"^http://192\.168\.\d+\.\d+:8080$"
+        return None
+
 
 
 @lru_cache(maxsize=1)

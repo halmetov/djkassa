@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useOutletContext } from "react-router-dom";
 import { apiDelete, apiGet, apiPost, apiPut, apiUpload } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,7 @@ interface Product {
 }
 
 export default function Products() {
+  const { isAdmin } = useOutletContext<{ isAdmin: boolean }>();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -177,7 +179,12 @@ export default function Products() {
       fetchProducts();
     } catch (error) {
       console.error(error);
-      toast.error("Ошибка обновления");
+      const status = (error as any)?.status;
+      if (status === 403) {
+        toast.error("Недостаточно прав");
+      } else {
+        toast.error("Ошибка обновления");
+      }
     }
   };
 
@@ -188,7 +195,12 @@ export default function Products() {
       fetchProducts();
     } catch (error) {
       console.error(error);
-      toast.error("Ошибка удаления");
+      const status = (error as any)?.status;
+      if (status === 403) {
+        toast.error("Недостаточно прав");
+      } else {
+        toast.error("Ошибка удаления");
+      }
     }
   };
 
@@ -443,46 +455,48 @@ export default function Products() {
                     {product.quantity}
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-2">
-                      {editingId === product.id ? (
-                        <>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleSave(product.id)}
-                          >
-                            <Check className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => {
-                              setEditingId(null);
-                              setEditPhotoFile(null);
-                            }}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleEdit(product)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleDelete(product.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
+                    {isAdmin && (
+                      <div className="flex gap-2">
+                        {editingId === product.id ? (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleSave(product.id)}
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditingId(null);
+                                setEditPhotoFile(null);
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleEdit(product)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleDelete(product.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               );

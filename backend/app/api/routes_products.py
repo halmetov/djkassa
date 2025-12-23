@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.auth.security import get_current_user, require_admin, require_employee
+from app.auth.security import admin_only_for_write, get_current_user, require_employee
 from app.core.config import get_settings
 from app.database.session import get_db
 from app.models.entities import Branch, Category, Product, Stock
@@ -45,7 +45,7 @@ async def list_products(
     return result.scalars().all()
 
 
-@router.post("", response_model=product_schema.Product, dependencies=[Depends(require_employee)])
+@router.post("", response_model=product_schema.Product, dependencies=[Depends(admin_only_for_write)])
 async def create_product(payload: product_schema.ProductCreate, db: Session = Depends(get_db)):
     settings = get_settings()
     safe_payload = payload.model_dump(exclude_none=True)
@@ -101,7 +101,11 @@ async def create_product(payload: product_schema.ProductCreate, db: Session = De
 
 
 
-@router.put("/{product_id}", response_model=product_schema.Product, dependencies=[Depends(require_employee)])
+@router.put(
+    "/{product_id}",
+    response_model=product_schema.Product,
+    dependencies=[Depends(admin_only_for_write)],
+)
 async def update_product(product_id: int, payload: product_schema.ProductUpdate, db: Session = Depends(get_db)):
     product = db.get(Product, product_id)
     if not product:
@@ -131,7 +135,11 @@ async def update_product(product_id: int, payload: product_schema.ProductUpdate,
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)])
+@router.delete(
+    "/{product_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(admin_only_for_write)],
+)
 async def delete_product(product_id: int, db: Session = Depends(get_db)):
     product = db.get(Product, product_id)
     if not product:
@@ -150,7 +158,11 @@ async def delete_product(product_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.post("/{product_id}/photo", response_model=product_schema.Product, dependencies=[Depends(require_admin)])
+@router.post(
+    "/{product_id}/photo",
+    response_model=product_schema.Product,
+    dependencies=[Depends(admin_only_for_write)],
+)
 async def upload_photo(
     product_id: int,
     request: Request,

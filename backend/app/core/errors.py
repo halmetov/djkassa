@@ -17,15 +17,20 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-def _build_base_payload(request: Request, *, error_type: str, detail: str, trace: str | None = None) -> dict[str, Any]:
+def _build_base_payload(
+    request: Request, *, error_type: str, detail: str, error_code: str | None = None, trace: str | None = None
+) -> dict[str, Any]:
     settings = get_settings()
     request_id = str(uuid.uuid4())
+    trace_id = str(uuid.uuid4())
     payload: dict[str, Any] = {
         "detail": detail,
+        "error_code": error_code or error_type,
         "error_type": error_type,
         "path": request.url.path,
         "method": request.method,
         "request_id": request_id,
+        "trace_id": trace_id,
     }
     if settings.debug and trace:
         payload["trace"] = trace
@@ -49,7 +54,8 @@ def register_error_handlers(app: FastAPI) -> None:
         trace = _log_exception(exc)
         payload = _build_base_payload(
             request,
-            error_type="IntegrityError",
+            error_type=exc.__class__.__name__,
+            error_code="integrity_error",
             detail=f"Integrity error: {exc.orig}",
             trace=trace,
         )
@@ -58,12 +64,7 @@ def register_error_handlers(app: FastAPI) -> None:
     async def db_schema_error_handler(request: Request, exc: SQLAlchemyError):  # type: ignore[override]
         trace = _log_exception(exc)
         detail_message = str(exc.orig) if getattr(exc, "orig", None) else str(exc)
-        payload = _build_base_payload(
-            request,
-            error_type=exc.__class__.__name__,
-            detail=f"DB schema mismatch: {detail_message}",
-            trace=trace,
-        )
+        payload = _build_base_payload(request, error_type=exc.__class__.__name__, detail=f"DB schema mismatch: {detail_message}", trace=trace)
         status_code = 500
         return JSONResponse(status_code=status_code, content=payload)
 
@@ -73,13 +74,13 @@ def register_error_handlers(app: FastAPI) -> None:
         payload = _build_base_payload(
             request,
             error_type="SQLAlchemyError",
+            error_code="database_error",
             detail=f"Database error: {detail_message}",
             trace=trace,
         )
         return JSONResponse(status_code=500, content=payload)
 
     async def validation_error_handler(request: Request, exc: ValidationError | RequestValidationError):  # type: ignore[override]
-        trace = _log_exception(exc)
         error_details = exc.errors()
         if error_details:
             first_error = error_details[0]
@@ -93,18 +94,21 @@ def register_error_handlers(app: FastAPI) -> None:
             detail = "Validation error"
         payload = _build_base_payload(
             request,
-            error_type="ValidationError",
+            error_type=exc.__class__.__name__,
+            error_code="validation_error",
             detail=detail,
-            trace=trace,
         )
         return JSONResponse(status_code=422, content=payload)
 
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):  # type: ignore[override]
-        trace = _log_exception(exc)
         detail_message = exc.detail if exc.detail else exc.__class__.__name__
+        trace = None
+        if exc.status_code >= 500:
+            trace = _log_exception(exc)
         payload = _build_base_payload(
             request,
             error_type="HTTPException",
+            error_code="http_error",
             detail=str(detail_message),
             trace=trace,
         )
@@ -115,6 +119,7 @@ def register_error_handlers(app: FastAPI) -> None:
         payload = _build_base_payload(
             request,
             error_type=exc.__class__.__name__,
+            error_code="internal_error",
             detail="Internal server error",
             trace=trace,
         )

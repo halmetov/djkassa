@@ -58,17 +58,21 @@ def _generate_revision_if_needed(command, config: Config, message: str) -> None:
     config.attributes.pop("process_revision_directives", None)
 
 
-def run_migrations_on_startup(settings: Settings) -> None:
+def run_migrations_on_startup(settings: Settings, *, raise_on_error: bool = True) -> None:
     if not settings.auto_run_migrations:
         LOGGER.info("Automatic migrations disabled; skipping upgrade.")
         return
 
     command, _ = _safe_import_alembic()
     if command is None:
+        if raise_on_error:
+            raise RuntimeError("Alembic is not installed; cannot run migrations.")
         return
 
     config = create_alembic_config(settings)
     if config is None:
+        if raise_on_error:
+            raise RuntimeError("Alembic configuration not found; cannot run migrations.")
         return
 
     try:
@@ -80,11 +84,13 @@ def run_migrations_on_startup(settings: Settings) -> None:
             LOGGER.info("Autogenerate disabled; applying existing migrations only.")
         command.upgrade(config, "head")
     except OperationalError as exc:
-        LOGGER.error(
-            "Skipping automatic migrations; database is not reachable (%s)", exc, exc_info=True
-        )
+        LOGGER.error("Automatic migrations failed; database is not reachable", exc_info=True)
+        if raise_on_error:
+            raise
     except Exception:
-        LOGGER.exception("Failed to run automatic migrations; startup will continue without them.")
+        LOGGER.exception("Failed to run automatic migrations")
+        if raise_on_error:
+            raise
 
 
 def upgrade_head(settings: Settings) -> None:

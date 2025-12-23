@@ -10,7 +10,8 @@ from sqlalchemy.engine import Connection
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = BASE_DIR.parent
-for path in (BASE_DIR, PROJECT_ROOT):
+APP_DIR = PROJECT_ROOT / "app"
+for path in (BASE_DIR, PROJECT_ROOT, APP_DIR):
     path_str = str(path)
     if path_str not in sys.path:
         sys.path.insert(0, path_str)

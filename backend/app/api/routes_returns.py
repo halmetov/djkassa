@@ -4,7 +4,7 @@ from datetime import date, datetime, time
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth.security import get_current_user
 from app.database.session import get_db
@@ -36,7 +36,7 @@ def _get_sale_for_return(db: Session, sale_id: int, current_user: User) -> Sale:
     sale = db.execute(
         select(Sale)
         .where(Sale.id == sale_id)
-        .options(joinedload(Sale.items))
+        .options(selectinload(Sale.items))
     ).scalar_one_or_none()
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
@@ -136,7 +136,12 @@ async def list_returns(
 ):
     query = (
         select(Return)
-        .options(joinedload(Return.branch), joinedload(Return.created_by))
+        .options(
+            joinedload(Return.branch),
+            joinedload(Return.created_by),
+            joinedload(Return.sale).joinedload(Sale.client),
+            selectinload(Return.items),
+        )
         .order_by(Return.created_at.desc())
     )
     query = _enforce_scope(query, current_user)
@@ -160,6 +165,7 @@ async def list_returns(
                 branch_name=entry.branch.name if entry.branch else None,
                 created_by_id=entry.created_by_id,
                 created_by_name=entry.created_by.name if entry.created_by else None,
+                client_name=entry.sale.client.name if entry.sale and entry.sale.client else None,
                 type=entry.type,
                 total_amount=total_amount,
                 created_at=entry.created_at,
@@ -180,10 +186,12 @@ async def get_return_detail(
         .options(
             joinedload(Return.branch),
             joinedload(Return.created_by),
-            joinedload(Return.items).joinedload(ReturnItem.sale_item).joinedload(SaleItem.product),
+            selectinload(Return.items)
+            .selectinload(ReturnItem.sale_item)
+            .selectinload(SaleItem.product),
             joinedload(Return.sale),
         )
-    ).scalar_one_or_none()
+    ).scalars().unique().one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Возврат не найден")
     if current_user.role == "employee" and current_user.branch_id != entry.branch_id:
@@ -211,6 +219,7 @@ async def get_return_detail(
         branch_name=entry.branch.name if entry.branch else None,
         created_by_id=entry.created_by_id,
         created_by_name=entry.created_by.name if entry.created_by else None,
+        client_name=entry.sale.client.name if entry.sale and entry.sale.client else None,
         type=entry.type,
         reason=entry.reason,
         total_amount=total_amount,

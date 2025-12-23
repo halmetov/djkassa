@@ -37,6 +37,7 @@ export async function login(login: string, password: string) {
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
     },
+    credentials: "include",
     body: new URLSearchParams({ username: login, password }).toString(),
   });
   if (!response.ok) {
@@ -62,6 +63,7 @@ export async function refreshAccessToken() {
     headers: {
       "Content-Type": "application/json",
     },
+    credentials: "include",
     body: JSON.stringify({ refresh_token: refreshToken }),
   });
   if (!response.ok) {
@@ -80,6 +82,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     headers: {
       Authorization: `Bearer ${token}`,
     },
+    credentials: "include",
   });
   if (response.status === 401) {
     const refreshed = await refreshAccessToken();
@@ -89,8 +92,21 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     return null;
   }
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Не удалось получить профиль");
+    let detail: string | null = null;
+    try {
+      const body = await response.json();
+      detail = body?.detail || body?.message;
+    } catch {
+      // ignore parse errors, fallback to text
+    }
+    if (!detail) {
+      try {
+        detail = await response.text();
+      } catch {
+        detail = null;
+      }
+    }
+    throw new Error(detail || `Не удалось получить профиль (status ${response.status})`);
   }
   return response.json();
 }

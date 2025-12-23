@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { Search } from "lucide-react";
 import { apiGet, apiPost } from "@/api/client";
+import { Label } from "@/components/ui/label";
 
 type SaleDetailItem = {
   id: number;
@@ -44,11 +45,36 @@ type SaleDetail = {
   items: SaleDetailItem[];
 };
 
+type ReturnSummary = {
+  id: number;
+  sale_id: number;
+  branch_name?: string | null;
+  created_by_name?: string | null;
+  client_name?: string | null;
+  type: string;
+  total_amount: number;
+  created_at: string;
+};
+
+type ReturnDetail = ReturnSummary & {
+  items: {
+    id: number;
+    sale_item_id: number;
+    quantity: number;
+    amount: number;
+    product_name?: string | null;
+  }[];
+  reason?: string | null;
+};
+
 export default function Returns() {
   const [searchSaleId, setSearchSaleId] = useState("");
   const [sale, setSale] = useState<SaleDetail | null>(null);
   const [returnItems, setReturnItems] = useState<Map<number, number>>(new Map());
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [history, setHistory] = useState<ReturnSummary[]>([]);
+  const [selectedReturn, setSelectedReturn] = useState<ReturnDetail | null>(null);
+  const [showReturnModal, setShowReturnModal] = useState(false);
 
   const searchSale = async () => {
     if (!searchSaleId.trim()) {
@@ -64,6 +90,31 @@ export default function Returns() {
       toast.error("Чек не найден");
     }
   };
+
+  const loadHistory = async () => {
+    try {
+      const list = await apiGet<ReturnSummary[]>("/api/returns");
+      setHistory(list);
+    } catch (error) {
+      console.error(error);
+      toast.error("Не удалось загрузить историю возвратов");
+    }
+  };
+
+  const loadReturnDetail = async (id: number) => {
+    try {
+      const detail = await apiGet<ReturnDetail>(`/api/returns/${id}`);
+      setSelectedReturn(detail);
+      setShowReturnModal(true);
+    } catch (error) {
+      console.error(error);
+      toast.error("Не удалось загрузить детали возврата");
+    }
+  };
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
 
   const updateReturnQuantity = (itemId: number, maxQty: number, value: number) => {
     const newMap = new Map(returnItems);
@@ -112,6 +163,7 @@ export default function Returns() {
       setReturnItems(new Map());
       setSearchSaleId("");
       setShowConfirmModal(false);
+      loadHistory();
     } catch (error) {
       console.error(error);
       toast.error("Ошибка при возврате");
@@ -207,6 +259,50 @@ export default function Returns() {
         )}
       </Card>
 
+      <Card className="p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold">История возвратов</h3>
+            <p className="text-sm text-muted-foreground">Последние операции</p>
+          </div>
+          <Button variant="outline" onClick={loadHistory}>
+            Обновить
+          </Button>
+        </div>
+        {history.length === 0 ? (
+          <div className="text-sm text-muted-foreground">Пока нет возвратов</div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Дата</TableHead>
+                <TableHead>Чек</TableHead>
+                <TableHead>Клиент</TableHead>
+                <TableHead>Сотрудник</TableHead>
+                <TableHead>Сумма</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {history.map((entry) => (
+                <TableRow key={entry.id}>
+                  <TableCell>{new Date(entry.created_at).toLocaleString("ru-RU")}</TableCell>
+                  <TableCell>#{entry.sale_id}</TableCell>
+                  <TableCell>{entry.client_name || "-"}</TableCell>
+                  <TableCell>{entry.created_by_name || "-"}</TableCell>
+                  <TableCell className="font-medium text-destructive">- {entry.total_amount.toFixed(2)} ₸</TableCell>
+                  <TableCell className="text-right">
+                    <Button size="sm" variant="outline" onClick={() => loadReturnDetail(entry.id)}>
+                      Подробнее
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
+
       <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
         <DialogContent>
           <DialogHeader>
@@ -234,6 +330,45 @@ export default function Returns() {
             </Button>
             <Button onClick={handleReturn}>Подтвердить</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showReturnModal} onOpenChange={setShowReturnModal}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Детали возврата</DialogTitle>
+          </DialogHeader>
+          {selectedReturn && (
+            <div className="space-y-3">
+              <div className="grid md:grid-cols-2 gap-2 text-sm">
+                <div>Дата: {new Date(selectedReturn.created_at).toLocaleString("ru-RU")}</div>
+                <div>Чек: #{selectedReturn.sale_id}</div>
+                <div>Клиент: {selectedReturn.client_name || "-"}</div>
+                <div>Сотрудник: {selectedReturn.created_by_name || "-"}</div>
+                <div>Тип: {selectedReturn.type}</div>
+                <div>Сумма: - {selectedReturn.total_amount.toFixed(2)} ₸</div>
+              </div>
+              {selectedReturn.reason && (
+                <div className="text-sm">
+                  <Label>Причина</Label>
+                  <p>{selectedReturn.reason}</p>
+                </div>
+              )}
+              <div>
+                <Label>Позиции</Label>
+                <div className="space-y-1 text-sm">
+                  {selectedReturn.items.map((item) => (
+                    <div key={item.id} className="flex justify-between">
+                      <span>{item.product_name || `ID ${item.sale_item_id}`}</span>
+                      <span>
+                        {item.quantity} шт • {item.amount.toFixed(2)} ₸
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

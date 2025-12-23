@@ -21,14 +21,23 @@ import { Eye } from "lucide-react";
 import { apiGet } from "@/api/client";
 import { toast } from "sonner";
 import { PrintableReceipt } from "@/components/PrintableReceipt";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useOutletContext } from "react-router-dom";
 
 type SaleSummary = {
   id: number;
+  entry_type?: string;
   created_at: string;
   seller_name?: string | null;
-  seller_id: number;
+  seller_id?: number | null;
   branch_name?: string | null;
-  branch_id: number;
+  branch_id?: number | null;
   client_name?: string | null;
   total_amount: number;
   payment_type: string;
@@ -64,11 +73,14 @@ type SaleDetail = {
 };
 
 export default function Reports() {
+  const { user } = useOutletContext<{ user: { id: number; role: string } | null; isAdmin: boolean }>();
   const [sales, setSales] = useState<SaleSummary[]>([]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [selectedSale, setSelectedSale] = useState<SaleDetail | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [sellers, setSellers] = useState<{ id: number; name: string }[]>([]);
+  const [sellerFilter, setSellerFilter] = useState<string | null>("all");
 
   useEffect(() => {
     const end = new Date();
@@ -77,13 +89,26 @@ export default function Reports() {
     setEndDate(end.toISOString().split('T')[0]);
     setStartDate(start.toISOString().split('T')[0]);
     fetchSales(start, end);
+    loadSellers();
   }, []);
 
-  const fetchSales = async (start?: Date, end?: Date) => {
+  const loadSellers = async () => {
+    try {
+      const users = await apiGet<{ id: number; name: string }[]>("/api/users");
+      const validUsers = (users || []).filter((u) => u.id !== null && u.id !== undefined);
+      setSellers(validUsers);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const fetchSales = async (start?: Date, end?: Date, sellerId?: string) => {
     try {
       const params = new URLSearchParams();
       if (start) params.set("start_date", start.toISOString().split('T')[0]);
       if (end) params.set("end_date", end.toISOString().split('T')[0]);
+      const seller = sellerId ?? sellerFilter;
+      if (seller && seller !== "all") params.set("seller_id", seller);
       const data = await apiGet<SaleSummary[]>(`/api/sales${params.toString() ? `?${params.toString()}` : ""}`);
       setSales(data);
     } catch (error) {
@@ -99,6 +124,10 @@ export default function Reports() {
   };
 
   const viewDetails = async (sale: SaleSummary) => {
+    if (sale.entry_type && sale.entry_type !== "sale") {
+      toast.info("Детали доступны только для продаж");
+      return;
+    }
     try {
       const detail = await apiGet<SaleDetail>(`/api/sales/${sale.id}`);
       setSelectedSale(detail);
@@ -112,7 +141,16 @@ export default function Reports() {
   const getTotalSales = () => sales.reduce((sum, sale) => sum + sale.total_amount, 0);
   const getTotalCash = () => sales.reduce((sum, sale) => sum + sale.paid_cash, 0);
   const getTotalCard = () => sales.reduce((sum, sale) => sum + sale.paid_card, 0);
-  const getTotalCredit = () => sales.reduce((sum, sale) => sum + sale.paid_debt, 0);
+  const getTotalCredit = () =>
+    sales
+      .filter((sale) => !sale.entry_type || sale.entry_type === "sale")
+      .reduce((sum, sale) => sum + sale.paid_debt, 0);
+
+  const entryLabels: Record<string, string> = {
+    sale: "Продажа",
+    return: "Возврат",
+    debt_payment: "Погашение долга",
+  };
 
   return (
     <div className="space-y-6">
@@ -135,6 +173,32 @@ export default function Reports() {
             <Button onClick={handleFilter} className="w-full">
               Применить фильтр
             </Button>
+          </div>
+          <div>
+            <Label>Сотрудник</Label>
+            <Select
+              value={sellerFilter ?? undefined}
+              onValueChange={(val) => {
+                setSellerFilter(val);
+                if (startDate && endDate) {
+                  fetchSales(new Date(startDate), new Date(endDate), val);
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Все сотрудники" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все</SelectItem>
+                {sellers
+                  .filter((s) => s.id !== null && s.id !== undefined)
+                  .map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -161,6 +225,7 @@ export default function Reports() {
           <TableHeader>
             <TableRow>
               <TableHead>Дата</TableHead>
+              <TableHead>Тип</TableHead>
               <TableHead>Сотрудник</TableHead>
               <TableHead>Филиал</TableHead>
               <TableHead className="text-right">Сумма</TableHead>
@@ -174,6 +239,7 @@ export default function Reports() {
             {sales.map((sale) => (
               <TableRow key={sale.id}>
                 <TableCell>{new Date(sale.created_at).toLocaleString('ru-RU')}</TableCell>
+                <TableCell>{entryLabels[sale.entry_type || "sale"] || "Операция"}</TableCell>
                 <TableCell>{sale.seller_name || "-"}</TableCell>
                 <TableCell>{sale.branch_name || "-"}</TableCell>
                 <TableCell className="text-right font-medium">{sale.total_amount.toFixed(2)} ₸</TableCell>

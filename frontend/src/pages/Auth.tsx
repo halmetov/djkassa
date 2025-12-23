@@ -15,9 +15,13 @@ export default function Auth() {
 
   useEffect(() => {
     const checkUser = async () => {
-      const user = await getCurrentUser();
-      if (user) {
-        navigate('/');
+      try {
+        const user = await getCurrentUser();
+        if (user) {
+          navigate('/');
+        }
+      } catch (error) {
+        console.error("Failed to fetch current user before login", error);
       }
     };
     checkUser();

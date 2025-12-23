@@ -1,9 +1,12 @@
 import logging
 import sys
+import time
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.requests import Request
 from app.api import (
     routes_auth,
     routes_branches,
@@ -16,16 +19,13 @@ from app.api import (
     routes_returns,
     routes_movements,
     routes_sales,
+    routes_cashier,
     routes_users,
+    routes_debts,
 )
+from app.bootstrap import bootstrap
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
-from app.database.session import SessionLocal
-from app.database.migrations import run_migrations_on_startup
-from app.auth.security import get_password_hash, verify_password
-from app.models.user import User
-from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 
 import app.models  # noqa: F401 - ensure models are imported for metadata
 
@@ -39,7 +39,20 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 
-app = FastAPI(title="Kassa API", version="1.0.0", redirect_slashes=False)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Application startup: running bootstrap")
+    try:
+        bootstrap(settings)
+    except Exception:
+        logger.exception("Application bootstrap failed")
+        raise
+    yield
+    logger.info("Application shutdown complete")
+
+
+app = FastAPI(title="Kassa API", version="1.0.0", redirect_slashes=False, lifespan=lifespan)
 app.router.redirect_slashes = False
 
 app.add_middleware(
@@ -54,50 +67,32 @@ app.add_middleware(
 register_error_handlers(app)
 
 
-def is_database_available() -> bool:
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    route_path = getattr(request.scope.get("route"), "path", request.url.path)
     try:
-        with SessionLocal() as db:
-            db.execute(text("SELECT 1"))
-        return True
-    except SQLAlchemyError:
-        logger.exception(
-            "Database is not available; skipping migrations and admin bootstrap during startup."
-        )
-        return False
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    if not is_database_available():
-        return
-
-    try:
-        run_migrations_on_startup(settings)
+        response = await call_next(request)
     except Exception:
-        logger.exception("Startup migrations failed; continuing without applying migrations.")
-
-    try:
-        with SessionLocal() as db:
-            admin = db.query(User).filter(User.login == "admin").first()
-            desired_password = settings.admin_password
-            if admin is None:
-                new_admin = User(
-                    name="Admin",
-                    login="admin",
-                    password_hash=get_password_hash(desired_password),
-                    role="admin",
-                    active=True,
-                )
-                db.add(new_admin)
-                db.commit()
-                logger.info("Bootstrap admin user created with provided credentials.")
-            else:
-                if desired_password and not verify_password(desired_password, admin.password_hash):
-                    admin.password_hash = get_password_hash(desired_password)
-                    db.commit()
-                    logger.info("Bootstrap admin password updated from ADMIN_PASSWORD.")
-    except SQLAlchemyError:
-        logger.exception("Database is not available during startup; skipping admin bootstrap.")
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        logger.exception(
+            "Request failed | method=%s path=%s elapsed_ms=%.2f",
+            request.method,
+            route_path,
+            elapsed_ms,
+        )
+        raise
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    status_code = getattr(response, "status_code", 500)
+    log_method = logger.info if status_code < 400 else logger.warning if status_code < 500 else logger.error
+    log_method(
+        "Request completed | method=%s path=%s status=%s elapsed_ms=%.2f",
+        request.method,
+        route_path,
+        status_code,
+        elapsed_ms,
+    )
+    return response
 
 app.include_router(routes_auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(routes_users.router, prefix="/api/users", tags=["users"])
@@ -108,9 +103,11 @@ app.include_router(routes_income.router, prefix="/api/income", tags=["income"])
 app.include_router(routes_sales.router, prefix="/api/sales", tags=["sales"])
 app.include_router(routes_clients.router, prefix="/api/clients", tags=["clients"])
 app.include_router(routes_pos.router, prefix="/api/pos", tags=["pos"])
+app.include_router(routes_cashier.router, prefix="/api/cashier", tags=["cashier"])
 app.include_router(routes_reports.router, prefix="/api/reports", tags=["reports"])
 app.include_router(routes_returns.router, prefix="/api/returns", tags=["returns"])
 app.include_router(routes_movements.router, prefix="/api/movements", tags=["movements"])
+app.include_router(routes_debts.router, prefix="/api/debts", tags=["debts"])
 
 media_root = settings.media_root_path
 media_root.mkdir(parents=True, exist_ok=True)

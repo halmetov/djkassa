@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useOutletContext } from "react-router-dom";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/table";
 
 export default function Categories() {
+  const { isAdmin } = useOutletContext<{ isAdmin: boolean }>();
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   const [newCategory, setNewCategory] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -62,7 +64,12 @@ export default function Categories() {
       fetchCategories();
     } catch (error) {
       console.error(error);
-      toast.error("Ошибка обновления");
+      const status = (error as any)?.status;
+      if (status === 403) {
+        toast.error("Недостаточно прав");
+      } else {
+        toast.error("Ошибка обновления");
+      }
     }
   };
 
@@ -73,7 +80,12 @@ export default function Categories() {
       fetchCategories();
     } catch (error) {
       console.error(error);
-      toast.error("Ошибка удаления");
+      const status = (error as any)?.status;
+      if (status === 403) {
+        toast.error("Недостаточно прав");
+      } else {
+        toast.error("Ошибка удаления");
+      }
     }
   };
 
@@ -117,43 +129,45 @@ export default function Categories() {
                   )}
                 </TableCell>
                 <TableCell>
-                  <div className="flex gap-2">
-                    {editingId === cat.id ? (
-                      <>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleSave(cat.id)}
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => setEditingId(null)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleEdit(cat.id, cat.name)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleDelete(cat.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
+                  {isAdmin && (
+                    <div className="flex gap-2">
+                      {editingId === cat.id ? (
+                        <>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleSave(cat.id)}
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setEditingId(null)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleEdit(cat.id, cat.name)}
+                            >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleDelete(cat.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

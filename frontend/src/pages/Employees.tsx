@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/api/client";
+import { useOutletContext } from "react-router-dom";
 
 type Employee = {
   id: number;
@@ -38,6 +39,7 @@ type Branch = {
 };
 
 export default function Employees() {
+  const { isAdmin, user } = useOutletContext<{ isAdmin: boolean; user: { branch_id: number | null } | null }>();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -66,9 +68,9 @@ export default function Employees() {
     try {
       const data = await apiGet<Employee[]>("/api/users");
       setEmployees(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Ошибка загрузки сотрудников");
+      toast.error(error?.message || "Ошибка загрузки сотрудников");
     }
   };
 
@@ -76,9 +78,9 @@ export default function Employees() {
     try {
       const data = await apiGet<Branch[]>("/api/branches");
       setBranches(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Не удалось загрузить список филиалов");
+      toast.error(error?.message || "Не удалось загрузить список филиалов");
     }
   };
 
@@ -99,9 +101,9 @@ export default function Employees() {
       toast.success("Сотрудник добавлен");
       setFormData({ name: "", login: "", password: "", role: "employee", active: true, branch_id: null });
       fetchEmployees();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Ошибка добавления сотрудника");
+      toast.error(error?.message || "Ошибка добавления сотрудника");
     }
   };
 
@@ -128,9 +130,14 @@ export default function Employees() {
       toast.success("Сотрудник обновлен");
       setEditingId(null);
       fetchEmployees();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Ошибка обновления");
+      const status = error?.status;
+      if (status === 403) {
+        toast.error("Недостаточно прав");
+      } else {
+        toast.error(error?.message || "Ошибка обновления");
+      }
     }
   };
 
@@ -139,9 +146,14 @@ export default function Employees() {
       await apiDelete(`/api/users/${id}`);
       toast.success("Сотрудник удален");
       fetchEmployees();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Ошибка удаления");
+      const status = error?.status;
+      if (status === 403) {
+        toast.error("Недостаточно прав");
+      } else {
+        toast.error(error?.message || "Ошибка удаления");
+      }
     }
   };
 
@@ -182,7 +194,11 @@ export default function Employees() {
           </div>
           <div>
             <Label>Роль</Label>
-            <Select value={formData.role} onValueChange={(value) => setFormData({ ...formData, role: value })}>
+            <Select
+              value={formData.role}
+              onValueChange={(value) => setFormData({ ...formData, role: value })}
+              disabled={!isAdmin}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -199,6 +215,7 @@ export default function Employees() {
               onValueChange={(value) =>
                 setFormData({ ...formData, branch_id: value === "none" ? null : Number(value) })
               }
+              disabled={!isAdmin && Boolean(user?.branch_id)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Выберите филиал" />
@@ -215,7 +232,11 @@ export default function Employees() {
           </div>
           <div className="flex items-center gap-2">
             <Label>Активен</Label>
-            <Switch checked={formData.active} onCheckedChange={(checked) => setFormData({ ...formData, active: checked })} />
+            <Switch
+              checked={formData.active}
+              onCheckedChange={(checked) => setFormData({ ...formData, active: checked })}
+              disabled={!isAdmin}
+            />
           </div>
         </div>
         <Button onClick={handleAdd}>Добавить</Button>
@@ -247,7 +268,11 @@ export default function Employees() {
                   <TableCell>{employee.login}</TableCell>
                   <TableCell>
                     {editingId === employee.id ? (
-                    <Select value={editData.role} onValueChange={(value) => setEditData({ ...editData, role: value })}>
+                    <Select
+                      value={editData.role}
+                      onValueChange={(value) => setEditData({ ...editData, role: value })}
+                      disabled={!isAdmin}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -267,6 +292,7 @@ export default function Employees() {
                         onValueChange={(value) =>
                           setEditData({ ...editData, branch_id: value === "none" ? null : Number(value) })
                         }
+                        disabled={!isAdmin && Boolean(user?.branch_id)}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -287,7 +313,11 @@ export default function Employees() {
                   <TableCell>
                     {editingId === employee.id ? (
                       <div className="flex items-center gap-2">
-                        <Switch checked={editData.active} onCheckedChange={(checked) => setEditData({ ...editData, active: checked })} />
+                        <Switch
+                          checked={editData.active}
+                          onCheckedChange={(checked) => setEditData({ ...editData, active: checked })}
+                          disabled={!isAdmin}
+                        />
                         <Input
                           type="password"
                           placeholder="Новый пароль"
@@ -302,27 +332,29 @@ export default function Employees() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-2">
-                      {editingId === employee.id ? (
-                        <>
-                          <Button size="icon" variant="ghost" onClick={() => handleSave(employee.id)}>
-                            <Check className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" onClick={() => setEditingId(null)}>
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button size="icon" variant="ghost" onClick={() => handleEdit(employee)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" onClick={() => handleDelete(employee.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
+                    {isAdmin && (
+                      <div className="flex gap-2">
+                        {editingId === employee.id ? (
+                          <>
+                            <Button size="icon" variant="ghost" onClick={() => handleSave(employee.id)}>
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button size="icon" variant="ghost" onClick={() => setEditingId(null)}>
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button size="icon" variant="ghost" onClick={() => handleEdit(employee)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button size="icon" variant="ghost" onClick={() => handleDelete(employee.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

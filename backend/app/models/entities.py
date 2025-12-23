@@ -86,8 +86,11 @@ class Movement(Base, TimestampMixin):
     created_by_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    status: Mapped[str] = mapped_column(String(50), default=MovementStatus.DRAFT.value)
+    processed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default=MovementStatus.WAITING.value)
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     from_branch: Mapped[Branch] = relationship(
         "Branch", foreign_keys=[from_branch_id], back_populates="outgoing_movements"
@@ -95,7 +98,12 @@ class Movement(Base, TimestampMixin):
     to_branch: Mapped[Branch] = relationship(
         "Branch", foreign_keys=[to_branch_id], back_populates="incoming_movements"
     )
-    created_by: Mapped[Optional["User"]] = relationship("User", back_populates="movements_created")
+    created_by: Mapped[Optional["User"]] = relationship(
+        "User", back_populates="movements_created", foreign_keys=[created_by_id]
+    )
+    processed_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[processed_by_id], back_populates="processed_movements"
+    )
     items: Mapped[List["MovementItem"]] = relationship(
         "MovementItem", back_populates="movement", cascade="all, delete-orphan"
     )
@@ -157,6 +165,7 @@ class Client(Base, TimestampMixin):
 
     debts: Mapped[List[Debt]] = relationship(back_populates="client")
     sales: Mapped[List[Sale]] = relationship(back_populates="client")
+    debt_payments: Mapped[List["DebtPayment"]] = relationship(back_populates="client")
 
 
 class Sale(Base, TimestampMixin):
@@ -239,6 +248,21 @@ class ReturnItem(Base):
 
     return_entry: Mapped[Return] = relationship(back_populates="items")
     sale_item: Mapped[SaleItem] = relationship()
+
+
+class DebtPayment(Base, TimestampMixin):
+    __tablename__ = "debt_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"))
+    payment_type: Mapped[str] = mapped_column(String(50), default="cash")
+    processed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    branch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("branches.id", ondelete="SET NULL"), nullable=True)
+
+    client: Mapped[Client] = relationship(back_populates="debt_payments")
+    processed_by: Mapped[Optional["User"]] = relationship("User", back_populates="debt_payments")
+    branch: Mapped[Optional[Branch]] = relationship("Branch")
 
 
 class Log(Base):

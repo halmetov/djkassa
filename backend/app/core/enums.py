@@ -7,5 +7,6 @@ class UserRole(str, enum.Enum):
 
 
 class MovementStatus(str, enum.Enum):
-    DRAFT = "draft"
-    CONFIRMED = "confirmed"
+    WAITING = "waiting"
+    DONE = "done"
+    REJECTED = "rejected"

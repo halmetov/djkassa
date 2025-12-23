@@ -38,8 +38,11 @@ class MovementBase(BaseModel):
     to_branch_id: int
     status: MovementStatus
     comment: Optional[str] = None
+    reason: Optional[str] = None
     created_at: datetime
     created_by_id: Optional[int] = None
+    processed_by_id: Optional[int] = None
+    processed_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -49,10 +52,13 @@ class MovementDetail(MovementBase):
     from_branch_name: Optional[str] = None
     to_branch_name: Optional[str] = None
     created_by_name: Optional[str] = None
+    processed_by_name: Optional[str] = None
     items: List[MovementItem]
 
 
 class MovementSummary(MovementBase):
     from_branch_name: Optional[str] = None
     to_branch_name: Optional[str] = None
-
+    created_by_name: Optional[str] = None
+    processed_by_name: Optional[str] = None
+    items: List[MovementItem]

@@ -17,6 +17,7 @@ def create_sync_engine(url: str) -> Engine:
         url,
         echo=bool(settings.debug),
         future=True,
+        pool_pre_ping=True,
         connect_args=connect_args,
     )
 

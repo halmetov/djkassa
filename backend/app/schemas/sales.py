@@ -29,7 +29,7 @@ class SaleItemDetail(SaleItem):
 
 
 class SaleBase(BaseModel):
-    branch_id: int
+    branch_id: Optional[int] = None
     client_id: Optional[int] = None
     seller_id: Optional[int] = None
     items: List[SaleItemCreate]
@@ -45,10 +45,11 @@ class SaleCreate(SaleBase):
 
 class SaleSummary(BaseModel):
     id: int
+    entry_type: str = "sale"
     created_at: datetime
-    branch_id: int
+    branch_id: Optional[int] = None
     branch_name: Optional[str] = None
-    seller_id: int
+    seller_id: Optional[int] = None
     seller_name: Optional[str] = None
     client_id: Optional[int] = None
     client_name: Optional[str] = None

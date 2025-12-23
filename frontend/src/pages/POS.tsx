@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Search, ShoppingCart, Trash2, Plus, Minus } from "lucide-react";
+import { Search, ShoppingCart, Trash2, Plus, Minus, HandCoins } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -30,32 +30,20 @@ interface Category {
 interface Product {
   id: number;
   name: string;
-  category_id: number | null;
   sale_price: number;
   barcode?: string | null;
-  unit: string;
+  unit?: string;
   image_url?: string | null;
   photo?: string | null;
-}
-
-interface Branch {
-  id: number;
-  name: string;
-  active: boolean;
+  available_qty: number;
+  category?: string | null;
 }
 
 interface Client {
   id: number;
   name: string;
   phone?: string | null;
-}
-
-interface Seller {
-  id: number;
-  name: string;
-  role: string;
-  branch_id: number | null;
-  active: boolean;
+  total_debt: number;
 }
 
 type CartItem = {
@@ -64,6 +52,7 @@ type CartItem = {
   price: number;
   quantity: number;
   total: number;
+  available_qty: number;
 };
 
 export default function POS() {
@@ -74,18 +63,20 @@ export default function POS() {
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [branches, setBranches] = useState<Branch[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
-  const [sellers, setSellers] = useState<Seller[]>([]);
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [selectedBranch, setSelectedBranch] = useState("");
-  const [selectedSeller, setSelectedSeller] = useState("");
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [cashAmount, setCashAmount] = useState("");
   const [cardAmount, setCardAmount] = useState("");
   const [creditAmount, setCreditAmount] = useState("");
   const [selectedClient, setSelectedClient] = useState("");
-
-  const isEmployee = user?.role === "employee";
+  const [showAddClientModal, setShowAddClientModal] = useState(false);
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientPhone, setNewClientPhone] = useState("");
+  const [showDebtModal, setShowDebtModal] = useState(false);
+  const [debtClientId, setDebtClientId] = useState("");
+  const [debtAmount, setDebtAmount] = useState("");
+  const [debtPaymentType, setDebtPaymentType] = useState<"cash" | "card">("cash");
 
   useEffect(() => {
     const loadUser = async () => {
@@ -93,10 +84,6 @@ export default function POS() {
         const current = await getCurrentUser();
         if (current) {
           setUser(current);
-          setSelectedSeller(String(current.id));
-          if (current.branch_id) {
-            setSelectedBranch(String(current.branch_id));
-          }
         }
       } catch (error) {
         console.error(error);
@@ -113,29 +100,39 @@ export default function POS() {
     }
   }, [user]);
 
-  useEffect(() => {
-    const loadProducts = async () => {
-      if (!user) return;
-      const branchId = user.role === "employee" ? user.branch_id : selectedBranch ? Number(selectedBranch) : null;
-      if (!branchId) {
-        setProducts([]);
-        setFilteredProducts([]);
-        if (user.role === "employee") {
-          toast.error("Сотрудник не привязан к филиалу");
-        }
-        return;
-      }
-      try {
-        const productsData = await apiGet<Product[]>(`/api/products?branch_id=${branchId}`);
-        setProducts(productsData);
-      } catch (error) {
-        console.error(error);
-        toast.error("Не удалось загрузить товары");
-      }
-    };
+  const syncCartWithStock = useCallback((nextProducts: Product[]) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        const matched = nextProducts.find((p) => p.id === item.product_id);
+        const available_qty = matched?.available_qty ?? item.available_qty;
+        const safeQty = Math.min(item.quantity, available_qty);
+        return {
+          ...item,
+          available_qty,
+          quantity: safeQty,
+          total: safeQty * item.price,
+        };
+      }),
+    );
+  }, []);
 
+  const loadProducts = useCallback(async () => {
+    setIsLoadingProducts(true);
+    try {
+      const productsData = await apiGet<Product[]>(`/api/cashier/products`);
+      setProducts(productsData);
+      syncCartWithStock(productsData);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || "Не удалось загрузить товары");
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  }, [syncCartWithStock]);
+
+  useEffect(() => {
     loadProducts();
-  }, [selectedBranch, user]);
+  }, [loadProducts]);
 
   useEffect(() => {
     filterProducts();
@@ -144,42 +141,12 @@ export default function POS() {
   const fetchData = async () => {
     if (!user) return;
     try {
-      const [categoriesData, branchesData, clientsData] = await Promise.all([
+      const [categoriesData, clientsData] = await Promise.all([
         apiGet<Category[]>("/api/categories"),
-        apiGet<Branch[]>("/api/branches"),
         apiGet<Client[]>("/api/clients"),
       ]);
       setCategories(categoriesData);
-      const activeBranches = branchesData.filter((branch) => branch.active);
-      setBranches(activeBranches);
-      setSelectedBranch((prev) => {
-        if (prev) return prev;
-        const preferredBranch = user.branch_id ?? activeBranches[0]?.id;
-        return preferredBranch ? String(preferredBranch) : "";
-      });
       setClients(clientsData);
-
-      if (user.role === "admin") {
-        const usersData = await apiGet<Seller[]>("/api/users");
-        const activeSellers = usersData.filter((u) => u.active);
-        setSellers(activeSellers);
-        setSelectedSeller((prev) => {
-          if (prev) return prev;
-          const fallback =
-            activeSellers.find((seller) => seller.id === user.id)?.id || activeSellers[0]?.id;
-          return fallback ? String(fallback) : "";
-        });
-      } else {
-        const selfSeller: Seller = {
-          id: user.id,
-          name: user.name,
-          role: user.role,
-          branch_id: user.branch_id,
-          active: user.active,
-        };
-        setSellers([selfSeller]);
-        setSelectedSeller(String(user.id));
-      }
     } catch (error) {
       console.error(error);
       toast.error("Не удалось загрузить данные");
@@ -189,7 +156,7 @@ export default function POS() {
   const filterProducts = () => {
     let filtered = products;
     if (selectedCategory) {
-      filtered = filtered.filter((p) => String(p.category_id) === selectedCategory);
+      filtered = filtered.filter((p) => String(p.category) === selectedCategory);
     }
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -201,12 +168,24 @@ export default function POS() {
   };
 
   const addToCart = (product: Product) => {
+    if (product.available_qty <= 0) {
+      toast.error("Товар недоступен на складе магазина");
+      return;
+    }
     const existingItem = cart.find((item) => item.product_id === product.id);
     if (existingItem) {
+      if (existingItem.quantity + 1 > product.available_qty) {
+        toast.error(`Не хватает. Доступно: ${product.available_qty}`);
+        return;
+      }
       setCart(
         cart.map((item) =>
           item.product_id === product.id
-            ? { ...item, quantity: item.quantity + 1, total: (item.quantity + 1) * item.price }
+            ? {
+                ...item,
+                quantity: item.quantity + 1,
+                total: (item.quantity + 1) * item.price,
+              }
             : item,
         ),
       );
@@ -219,6 +198,7 @@ export default function POS() {
           price: product.sale_price,
           quantity: 1,
           total: product.sale_price,
+          available_qty: product.available_qty,
         },
       ]);
     }
@@ -228,7 +208,11 @@ export default function POS() {
     setCart(
       cart.map((item) => {
         if (item.product_id === product_id) {
-          const newQty = Math.max(1, item.quantity + delta);
+          const desired = Math.max(1, item.quantity + delta);
+          const newQty = Math.min(desired, item.available_qty);
+          if (desired > item.available_qty) {
+            toast.error(`Не хватает. Доступно: ${item.available_qty}`);
+          }
           return { ...item, quantity: newQty, total: newQty * item.price };
         }
         return item;
@@ -251,16 +235,11 @@ export default function POS() {
   };
 
   const getTotalAmount = () => cart.reduce((sum, item) => sum + item.total, 0);
+  const hasInsufficient = useMemo(() => cart.some((item) => item.quantity > item.available_qty), [cart]);
 
   const handlePayment = async () => {
     if (!user) {
       toast.error("Не удалось определить пользователя");
-      return;
-    }
-    const branchId = isEmployee ? user.branch_id : selectedBranch ? Number(selectedBranch) : null;
-    const sellerId = isEmployee ? user.id : selectedSeller ? Number(selectedSeller) : user.id;
-    if (!branchId) {
-      toast.error("Выберите филиал");
       return;
     }
     if (cart.length === 0) {
@@ -277,8 +256,14 @@ export default function POS() {
       return;
     }
     if (credit > 0 && !selectedClient) {
-      toast.error("Выберите клиента для кредита");
+      toast.error("Для продажи в долг выберите клиента");
       return;
+    }
+    for (const item of cart) {
+      if (item.quantity > item.available_qty) {
+        toast.error(`Не хватает. Доступно: ${item.available_qty}`);
+        return;
+      }
     }
     try {
       let paymentType = "cash";
@@ -290,8 +275,6 @@ export default function POS() {
         paymentType = "kaspi";
       }
       await apiPost("/api/sales", {
-        branch_id: branchId,
-        seller_id: sellerId,
         client_id: selectedClient ? Number(selectedClient) : null,
         paid_cash: cash,
         paid_card: card,
@@ -311,9 +294,72 @@ export default function POS() {
       setCardAmount("");
       setCreditAmount("");
       setSelectedClient("");
+      loadProducts();
     } catch (error) {
       console.error(error);
-      toast.error("Ошибка при оформлении продажи");
+      toast.error((error as any)?.message || "Ошибка при оформлении продажи");
+    }
+  };
+
+  const handleCreateClient = async () => {
+    if (!newClientName.trim()) {
+      toast.error("Укажите имя клиента");
+      return;
+    }
+    try {
+      const payload: { name: string; phone?: string } = { name: newClientName.trim() };
+      if (newClientPhone.trim()) {
+        const phone = newClientPhone.trim();
+        const phoneRegex = /^[+0-9][0-9\s-]{5,}$/;
+        if (!phoneRegex.test(phone)) {
+          toast.error("Некорректный телефон");
+          return;
+        }
+        payload.phone = phone;
+      }
+      const created = await apiPost<Client>("/api/clients", payload);
+      setClients((prev) => [...prev, created]);
+      setSelectedClient(String(created.id));
+      setShowAddClientModal(false);
+      setNewClientName("");
+      setNewClientPhone("");
+      toast.success("Клиент добавлен");
+    } catch (error) {
+      console.error(error);
+      toast.error((error as any)?.message || "Не удалось создать клиента");
+    }
+  };
+
+  const handleDebtPayment = async () => {
+    if (!debtClientId) {
+      toast.error("Выберите клиента");
+      return;
+    }
+    const amountValue = parseFloat(debtAmount);
+    if (!amountValue || amountValue <= 0) {
+      toast.error("Введите сумму погашения");
+      return;
+    }
+    try {
+      await apiPost("/api/debts/pay", {
+        client_id: Number(debtClientId),
+        amount: amountValue,
+        payment_type: debtPaymentType === "cash" ? "cash" : "card",
+      });
+      setClients((prev) =>
+        prev.map((c) =>
+          c.id === Number(debtClientId)
+            ? { ...c, total_debt: Math.max(0, c.total_debt - amountValue) }
+            : c,
+        ),
+      );
+      toast.success("Долг погашен");
+      setShowDebtModal(false);
+      setDebtAmount("");
+      setDebtClientId("");
+    } catch (error) {
+      console.error(error);
+      toast.error((error as any)?.message || "Не удалось погасить долг");
     }
   };
 
@@ -342,8 +388,8 @@ export default function POS() {
           {categories.map((category) => (
             <Button
               key={category.id}
-              variant={selectedCategory === String(category.id) ? "default" : "outline"}
-              onClick={() => setSelectedCategory(String(category.id))}
+              variant={selectedCategory === category.name ? "default" : "outline"}
+              onClick={() => setSelectedCategory(category.name)}
             >
               {category.name}
             </Button>
@@ -368,11 +414,13 @@ export default function POS() {
               )}
               <div className="font-semibold">{product.name}</div>
               <div className="text-sm text-muted-foreground">
-                {product.sale_price.toFixed(2)} ₸ / {product.unit}
+                {product.sale_price.toFixed(2)} ₸ {product.unit ? `/ ${product.unit}` : ""}
               </div>
+              <div className="text-xs text-muted-foreground mt-1">Остаток: {product.available_qty}</div>
               {product.barcode && (
                 <div className="text-xs text-muted-foreground mt-1">Штрихкод: {product.barcode}</div>
               )}
+              {isLoadingProducts && <div className="text-xs text-muted-foreground mt-1">Обновление...</div>}
             </Card>
           ))}
         </div>
@@ -382,57 +430,68 @@ export default function POS() {
         <div className="flex items-center gap-2 mb-4">
           <ShoppingCart className="h-5 w-5" />
           <h2 className="text-xl font-bold">Корзина</h2>
+          <Button variant="ghost" size="icon" className="ml-auto" onClick={() => setShowDebtModal(true)}>
+            <HandCoins className="h-4 w-4" />
+          </Button>
         </div>
 
         <div className="flex-1 space-y-2 overflow-auto mb-4">
-          {cart.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8">Корзина пуста</div>
-          ) : (
-            cart.map((item) => (
-              <Card key={item.product_id} className="p-3">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-start">
-                    <div className="font-medium flex-1">{item.name}</div>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => removeFromCart(item.product_id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+        {cart.length === 0 ? (
+          <div className="text-center text-muted-foreground py-8">Корзина пуста</div>
+        ) : (
+          cart.map((item) => (
+            <Card key={item.product_id} className="p-3">
+              <div className="space-y-2">
+                <div className="flex justify-between items-start">
+                  <div className="font-medium flex-1">{item.name}</div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => removeFromCart(item.product_id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
 
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      onClick={() => updateQuantity(item.product_id, -1)}
-                    >
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <Input
-                      type="number"
-                      value={item.quantity}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value) || 1;
-                        updateQuantity(item.product_id, val - item.quantity);
-                      }}
-                      className="w-16 text-center"
-                    />
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      onClick={() => updateQuantity(item.product_id, 1)}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => updateQuantity(item.product_id, -1)}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                  <Input
+                    type="number"
+                    value={item.quantity}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 1;
+                      const capped = Math.min(val, item.available_qty);
+                      if (val > item.available_qty) {
+                        toast.error(`Не хватает. Доступно: ${item.available_qty}`);
+                      }
+                      updateQuantity(item.product_id, capped - item.quantity);
+                    }}
+                    className="w-16 text-center"
+                  />
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => updateQuantity(item.product_id, 1)}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground">Доступно: {item.available_qty}</div>
+                {item.quantity > item.available_qty && (
+                  <div className="text-xs text-destructive font-medium">Не хватает на складе магазина</div>
+                )}
 
-                  <div className="flex gap-2">
-                    <Input
-                      type="number"
-                      value={item.price}
-                      onChange={(e) => updatePrice(item.product_id, parseFloat(e.target.value) || 0)}
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    value={item.price}
+                    onChange={(e) => updatePrice(item.product_id, parseFloat(e.target.value) || 0)}
                       className="flex-1"
                     />
                     <div className="font-bold text-lg">{item.total.toFixed(2)} ₸</div>
@@ -448,12 +507,15 @@ export default function POS() {
             <span>Итого:</span>
             <span>{getTotalAmount().toFixed(2)} ₸</span>
           </div>
+          {hasInsufficient && (
+            <div className="text-sm text-destructive">Количество превышает остаток. Обновите позиции.</div>
+          )}
 
           <Button
             className="w-full"
             size="lg"
             onClick={() => setShowPaymentModal(true)}
-            disabled={cart.length === 0}
+            disabled={cart.length === 0 || hasInsufficient}
           >
             Оплата
           </Button>
@@ -469,39 +531,15 @@ export default function POS() {
           <div className="space-y-4">
             <div>
               <Label>Филиал</Label>
-              <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isEmployee}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите филиал" />
-                </SelectTrigger>
-                <SelectContent>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={String(branch.id)}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="text-sm text-muted-foreground">Магазин</div>
             </div>
 
-            <div>
-              <Label>Продавец</Label>
-              <Select
-                value={selectedSeller}
-                onValueChange={setSelectedSeller}
-                disabled={isEmployee || sellers.length === 0}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите продавца" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sellers.map((seller) => (
-                    <SelectItem key={seller.id} value={String(seller.id)}>
-                      {seller.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {user && (
+              <div>
+                <Label>Продавец</Label>
+                <div className="text-sm text-muted-foreground">{user.name}</div>
+              </div>
+            )}
 
             <div>
               <Label>Наличные</Label>
@@ -536,18 +574,23 @@ export default function POS() {
             {parseFloat(creditAmount) > 0 && (
               <div>
                 <Label>Клиент</Label>
-                <Select value={selectedClient} onValueChange={setSelectedClient}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Выберите клиента" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clients.map((client) => (
-                      <SelectItem key={client.id} value={String(client.id)}>
-                        {client.name} {client.phone && `(${client.phone})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <Select value={selectedClient} onValueChange={setSelectedClient} className="flex-1">
+                    <SelectTrigger>
+                      <SelectValue placeholder="Выберите клиента" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.map((client) => (
+                        <SelectItem key={client.id} value={String(client.id)}>
+                          {client.name} {client.phone && `(${client.phone})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" onClick={() => setShowAddClientModal(true)}>
+                    + Добавить клиента
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -561,7 +604,98 @@ export default function POS() {
             <Button variant="outline" onClick={() => setShowPaymentModal(false)}>
               Отмена
             </Button>
-            <Button onClick={handlePayment}>Подтвердить</Button>
+            <Button onClick={handlePayment} disabled={hasInsufficient}>
+              Подтвердить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddClientModal} onOpenChange={setShowAddClientModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Новый клиент</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Имя *</Label>
+              <Input value={newClientName} onChange={(e) => setNewClientName(e.target.value)} />
+            </div>
+            <div>
+              <Label>Телефон</Label>
+              <Input
+                value={newClientPhone}
+                onChange={(e) => setNewClientPhone(e.target.value)}
+                placeholder="+7 777 123-45-67"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddClientModal(false)}>
+              Отмена
+            </Button>
+            <Button onClick={handleCreateClient}>Сохранить</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDebtModal} onOpenChange={setShowDebtModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Погашение долга</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Клиент *</Label>
+              <Select
+                value={debtClientId}
+                onValueChange={(val) => {
+                  setDebtClientId(val);
+                  const client = clients.find((c) => c.id === Number(val));
+                  if (client) {
+                    setDebtAmount(String(client.total_debt || ""));
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите клиента" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={String(client.id)}>
+                      {client.name} • долг {client.total_debt.toFixed(2)} ₸
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Сумма</Label>
+              <Input
+                type="number"
+                value={debtAmount}
+                onChange={(e) => setDebtAmount(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <Label>Способ оплаты</Label>
+              <Select value={debtPaymentType} onValueChange={(val) => setDebtPaymentType(val as "cash" | "card")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Наличные</SelectItem>
+                  <SelectItem value="card">Карта</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDebtModal(false)}>
+              Отмена
+            </Button>
+            <Button onClick={handleDebtPayment}>Погасить</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

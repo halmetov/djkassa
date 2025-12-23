@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class SaleSummary(BaseModel):
     id: int
+    entry_type: str = "sale"
     created_at: datetime
     seller: str
     branch: str

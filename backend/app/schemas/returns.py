@@ -34,6 +34,7 @@ class ReturnSummary(BaseModel):
     branch_name: str | None
     created_by_id: int
     created_by_name: str | None
+    client_name: str | None = None
     type: str
     total_amount: float
     created_at: datetime

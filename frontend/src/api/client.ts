@@ -33,15 +33,23 @@ async function handleResponse<T>(response: Response, context: RequestContext): P
 
   if (!response.ok) {
     let detail: unknown;
-    if (parsed && typeof parsed === "object") {
-      if (Array.isArray(parsed)) {
-        const first = parsed[0] as any;
-        detail = first?.detail || first?.message || first?.msg;
-      } else {
-        detail = (parsed as Record<string, unknown>).detail || (parsed as Record<string, unknown>).message;
-      }
+    let errorCode: string | undefined;
+    let traceId: string | undefined;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const asRecord = parsed as Record<string, unknown>;
+      detail = asRecord.detail || asRecord.message;
+      errorCode = typeof asRecord.error_code === "string" ? asRecord.error_code : undefined;
+      traceId = typeof asRecord.trace_id === "string" ? asRecord.trace_id : undefined;
+    } else if (Array.isArray(parsed)) {
+      const first = parsed[0] as any;
+      detail = first?.detail || first?.message || first?.msg;
     }
-    const message = detail || (typeof parsed === "string" ? parsed : raw) || `API error: ${response.status}`;
+    const baseMessage = detail || (typeof parsed === "string" ? parsed : raw) || "API error";
+    const statusInfo = `status=${response.status}`;
+    const codeInfo = errorCode ? `error_code=${errorCode}` : null;
+    const traceInfo = traceId ? `trace_id=${traceId}` : null;
+    const composed = [baseMessage, statusInfo, codeInfo, traceInfo].filter(Boolean).join(" | ");
+
     console.error("API request failed", {
       method: context.method,
       url: context.url,
@@ -50,9 +58,11 @@ async function handleResponse<T>(response: Response, context: RequestContext): P
       response: raw,
       body: parsed,
     });
-    const error = new Error(String(message));
+    const error = new Error(String(composed));
     (error as any).status = response.status;
     (error as any).body = parsed ?? raw;
+    (error as any).traceId = traceId;
+    (error as any).errorCode = errorCode;
     throw error;
   }
 
@@ -78,7 +88,7 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
     response = await fetch(url, {
       ...options,
       headers,
-      credentials: "omit",
+      credentials: "include",
     });
   } catch (error) {
     console.error("Network/transport error while calling API", {
