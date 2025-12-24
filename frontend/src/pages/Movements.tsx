@@ -150,6 +150,22 @@ export default function Movements() {
   };
 
   const stockOptions = useMemo(() => stock.map((s) => ({ value: s.product_id, label: s.product, available: s.quantity })), [stock]);
+  const toBranchOptions = useMemo(
+    () =>
+      branches.filter((b) =>
+        user?.role === "admin" || !fromBranch ? true : b.id !== Number(fromBranch)
+      ),
+    [branches, fromBranch, user?.role]
+  );
+
+  useEffect(() => {
+    if (user?.role === "employee" && fromBranch) {
+      const firstOther = branches.find((b) => b.id !== Number(fromBranch));
+      if (firstOther && (!toBranch || Number(toBranch) === Number(fromBranch))) {
+        setToBranch(String(firstOther.id));
+      }
+    }
+  }, [branches, fromBranch, toBranch, user?.role]);
 
   const handleAddItemRow = () => {
     if (!fromBranch) {
@@ -291,7 +307,7 @@ export default function Movements() {
                 <SelectValue placeholder="Выберите филиал" />
               </SelectTrigger>
               <SelectContent>
-                {branches.map((b) => (
+                {toBranchOptions.map((b) => (
                   <SelectItem key={b.id} value={String(b.id)}>
                     {b.name}
                   </SelectItem>

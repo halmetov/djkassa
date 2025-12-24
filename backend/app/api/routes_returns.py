@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 
+from datetime import date, datetime, time
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth.security import get_current_user
@@ -16,11 +18,13 @@ from app.services.inventory import adjust_stock
 router = APIRouter(redirect_slashes=False)
 
 
-def _apply_date_filters(query, start_date: date | None, end_date: date | None):
+def _apply_date_filters(
+    query, start_date: date | None, end_date: date | None, column=Return.created_at
+):
     if start_date:
-        query = query.where(Return.created_at >= datetime.combine(start_date, time.min))
+        query = query.where(column >= datetime.combine(start_date, time.min))
     if end_date:
-        query = query.where(Return.created_at <= datetime.combine(end_date, time.max))
+        query = query.where(column <= datetime.combine(end_date, time.max))
     return query
 
 
@@ -37,6 +41,7 @@ def _get_sale_for_return(db: Session, sale_id: int, current_user: User) -> Sale:
         select(Sale)
         .where(Sale.id == sale_id)
         .options(selectinload(Sale.items))
+        .with_for_update()
     ).scalar_one_or_none()
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
@@ -72,6 +77,19 @@ def _build_return_items(
 
     return_items: list[ReturnItem] = []
     for sale_item, qty in items_to_process:
+        db.execute(select(SaleItem).where(SaleItem.id == sale_item.id).with_for_update()).scalar_one()
+        returned_qty = db.execute(
+            select(func.coalesce(func.sum(ReturnItem.quantity), 0)).where(
+                ReturnItem.sale_item_id == sale_item.id
+            )
+        ).scalar_one()
+        available_for_return = max(sale_item.quantity - int(returned_qty or 0), 0)
+        if qty > available_for_return:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Доступно к возврату только {available_for_return} шт.",
+            )
+
         unit_price = (sale_item.total / sale_item.quantity) if sale_item.quantity else sale_item.price
         amount = unit_price * qty
         adjust_stock(db, sale.branch_id, sale_item.product_id, qty)
@@ -94,31 +112,39 @@ async def create_return(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    sale = _get_sale_for_return(db, payload.sale_id, current_user)
-    return_items = _build_return_items(sale, payload, db)
+    try:
+        sale = _get_sale_for_return(db, payload.sale_id, current_user)
+        return_items = _build_return_items(sale, payload, db)
 
-    return_entry = Return(
-        sale_id=sale.id,
-        branch_id=sale.branch_id,
-        type=payload.type,
-        reason=payload.reason,
-        created_by_id=current_user.id,
-    )
-    db.add(return_entry)
-    db.flush()
+        return_entry = Return(
+            sale_id=sale.id,
+            branch_id=sale.branch_id,
+            type=payload.type,
+            reason=payload.reason,
+            created_by_id=current_user.id,
+        )
+        db.add(return_entry)
+        db.flush()
 
-    total_amount = 0.0
-    for item in return_items:
-        item.return_id = return_entry.id
-        total_amount += item.amount
-        db.add(item)
+        total_amount = 0.0
+        for item in return_items:
+            item.return_id = return_entry.id
+            total_amount += item.amount
+            db.add(item)
 
-    if sale.client_id and sale.paid_debt > 0:
-        client = sale.client
-        if client:
-            client.total_debt = max(client.total_debt - total_amount, 0)
+        if sale.client_id and sale.paid_debt > 0:
+            client = sale.client
+            if client:
+                client.total_debt = max(client.total_debt - total_amount, 0)
 
-    db.commit()
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
     db.refresh(return_entry)
     db.refresh(return_entry, attribute_names=["items", "branch", "created_by"])
     return await get_return_detail(return_entry.id, db=db, current_user=current_user)

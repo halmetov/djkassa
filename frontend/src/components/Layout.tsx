@@ -97,13 +97,21 @@ export const Layout = () => {
   return (
     <SidebarProvider open={open} onOpenChange={setOpen}>
       <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar
-          user={user}
-          isLoadingUser={isLoadingUser}
-          lowStockCount={lowStockCount}
-          isOpen={isSidebarOpen}
-          onClose={closeSidebar}
-        />
+        {(open || isSidebarOpen) && (
+          <div
+            className={`${isSidebarOpen ? "block" : "hidden md:block"} ${
+              open ? "md:w-auto" : "md:w-0 md:min-w-0 md:overflow-hidden"
+            } transition-[width] duration-200`}
+          >
+            <AppSidebar
+              user={user}
+              isLoadingUser={isLoadingUser}
+              lowStockCount={lowStockCount}
+              isOpen={isSidebarOpen || open}
+              onClose={closeSidebar}
+            />
+          </div>
+        )}
         <main className="flex-1 flex flex-col">
           <header className="h-14 border-b bg-card flex items-center px-4 lg:px-6">
             <Button

@@ -2,21 +2,22 @@ from fastapi import APIRouter, Depends
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import case, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth.security import require_admin
 from app.database.session import get_db
-from app.models.entities import Branch, DebtPayment, Product, Return, ReturnItem, Sale, SaleItem, User
+from app.models.entities import Branch, DebtPayment, Product, Return, Sale, SaleItem, User
 from app.schemas import reports as report_schema
+from app.services.returns import calculate_return_breakdowns
 
 router = APIRouter(redirect_slashes=False)
 
 
-def _apply_date_filters(query, start_date: date | None, end_date: date | None):
+def _apply_date_filters(query, start_date: date | None, end_date: date | None, column=Sale.created_at):
     if start_date:
-        query = query.where(Sale.created_at >= datetime.combine(start_date, time.min))
+        query = query.where(column >= datetime.combine(start_date, time.min))
     if end_date:
-        query = query.where(Sale.created_at <= datetime.combine(end_date, time.max))
+        query = query.where(column <= datetime.combine(end_date, time.max))
     return query
 
 
@@ -57,43 +58,39 @@ async def get_summary(
             )
         )
 
-    return_query = select(
-        Return.id,
-        Return.created_at,
-        Return.branch_id,
-        Return.created_by_id,
-        Branch.name,
-        User.name,
-        func.coalesce(func.sum(ReturnItem.amount), 0),
-    ).join(Branch, Return.branch_id == Branch.id).join(User, Return.created_by_id == User.id).join(
-        ReturnItem, ReturnItem.return_id == Return.id
+    return_query = (
+        select(Return)
+        .options(
+            joinedload(Return.branch),
+            joinedload(Return.created_by),
+            selectinload(Return.items),
+            joinedload(Return.sale),
+        )
+        .order_by(Return.created_at.desc())
     )
     if branch_id:
         return_query = return_query.where(Return.branch_id == branch_id)
     if seller_id:
         return_query = return_query.where(Return.created_by_id == seller_id)
-    return_query = return_query.group_by(
-        Return.id,
-        Return.created_at,
-        Return.branch_id,
-        Return.created_by_id,
-        Branch.name,
-        User.name,
-    )
     return_query = _apply_date_filters(return_query, start_date, end_date, Return.created_at)
-    for row in db.execute(return_query):
+    return_entries = db.execute(return_query).scalars().unique().all()
+    return_breakdowns = calculate_return_breakdowns(return_entries)
+
+    for entry in return_entries:
+        breakdown = return_breakdowns.get(entry.id)
+        total_amount = breakdown.total if breakdown else sum(item.amount for item in entry.items)
         operations.append(
             report_schema.SaleSummary(
-                id=row[0],
+                id=entry.id,
                 entry_type="return",
-                created_at=row[1],
-                seller=row[5],
-                branch=row[4],
-                total_amount=-(float(row[6]) if row[6] else 0),
+                created_at=entry.created_at,
+                seller=entry.created_by.name if entry.created_by else "-",
+                branch=entry.branch.name if entry.branch else "-",
+                total_amount=-float(total_amount),
                 payment_type="return",
-                paid_cash=-(float(row[6]) if row[6] else 0),
-                paid_card=0,
-                paid_debt=0,
+                paid_cash=-(breakdown.cash if breakdown else total_amount),
+                paid_card=-(breakdown.card if breakdown else 0),
+                paid_debt=-(breakdown.debt if breakdown else 0),
             )
         )
 
@@ -195,20 +192,25 @@ async def get_analytics(
         ).where(*totals_filters)
     ).one()
 
-    returns_filters = [
-        Return.created_at >= start_dt,
-        Return.created_at <= end_dt,
-    ]
-    if branch_id:
-        returns_filters.append(Return.branch_id == branch_id)
-    if seller_id:
-        returns_filters.append(Return.created_by_id == seller_id)
-
-    total_returns = db.execute(
-        select(func.coalesce(func.sum(ReturnItem.amount), 0)).select_from(Return).join(ReturnItem).where(
-            *returns_filters
+    returns_query = (
+        select(Return)
+        .options(
+            selectinload(Return.items),
+            joinedload(Return.sale),
         )
-    ).scalar_one()
+        .where(Return.created_at >= start_dt, Return.created_at <= end_dt)
+    )
+    if branch_id:
+        returns_query = returns_query.where(Return.branch_id == branch_id)
+    if seller_id:
+        returns_query = returns_query.where(Return.created_by_id == seller_id)
+
+    return_entries = db.execute(returns_query).scalars().unique().all()
+    return_breakdowns = calculate_return_breakdowns(return_entries)
+    refunds_total = sum(b.total for b in return_breakdowns.values())
+    refunds_cash = sum(b.cash for b in return_breakdowns.values())
+    refunds_card = sum(b.card for b in return_breakdowns.values())
+    refunds_debt = sum(b.debt for b in return_breakdowns.values())
 
     debt_filters = [
         DebtPayment.created_at >= start_dt,
@@ -236,16 +238,18 @@ async def get_analytics(
         ).where(*debt_filters)
     ).one()
 
-    net_total_sales = float(total_sales or 0) - float(total_returns or 0)
+    net_total_sales = float(total_sales or 0) - float(refunds_total)
     net_total_sales += float(debt_cash or 0) + float(debt_card or 0)
 
-    net_cash = float(total_cash or 0) - float(total_returns or 0) + float(debt_cash or 0)
-    net_card = float(total_kaspi or 0) + float(debt_card or 0)
+    net_cash = float(total_cash or 0) - float(refunds_cash) + float(debt_cash or 0)
+    net_card = float(total_kaspi or 0) - float(refunds_card) + float(debt_card or 0)
+
+    credit_total = float(total_credit or 0) - float(refunds_debt)
 
     payment_breakdown = report_schema.PaymentBreakdown(
         cash=net_cash,
         kaspi=net_card,
-        credit=float(total_credit or 0),
+        credit=credit_total,
     )
 
     daily_map: dict[date, report_schema.DailyReport] = {}
@@ -265,19 +269,13 @@ async def get_analytics(
         entry.total_sales += float(total_amount or 0)
         entry.total_credit += float(credit_amount or 0)
 
-    returns_by_day_rows = db.execute(
-        select(
-            func.date(Return.created_at),
-            func.sum(ReturnItem.amount),
-        )
-        .join(ReturnItem)
-        .where(*returns_filters)
-        .group_by(func.date(Return.created_at))
-    ).all()
-    for day, amount in returns_by_day_rows:
+    for entry, breakdown in ((ret, return_breakdowns.get(ret.id)) for ret in return_entries):
+        day = entry.created_at.date()
         daily_map.setdefault(day, report_schema.DailyReport(day=day, total_sales=0, total_credit=0))
-        entry = daily_map[day]
-        entry.total_sales -= float(amount or 0)
+        refund = breakdown.total if breakdown else sum(item.amount for item in entry.items)
+        debt_refund = breakdown.debt if breakdown else 0
+        daily_map[day].total_sales -= float(refund or 0)
+        daily_map[day].total_credit -= float(debt_refund or 0)
 
     debt_by_day_rows = db.execute(
         select(
@@ -324,6 +322,10 @@ async def get_analytics(
         payment_breakdown=payment_breakdown,
         top_products=top_products,
         total_sales=net_total_sales,
-        total_debt=float(total_credit or 0),
+        total_debt=credit_total,
         total_receipts=int(total_receipts or 0),
+        refunds_cash=refunds_cash,
+        refunds_card=refunds_card,
+        refunds_debt=refunds_debt,
+        refunds_total=refunds_total,
     )

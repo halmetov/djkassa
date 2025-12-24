@@ -60,3 +60,7 @@ class AnalyticsResponse(BaseModel):
     total_sales: float
     total_debt: float
     total_receipts: int
+    refunds_total: float
+    refunds_cash: float
+    refunds_card: float
+    refunds_debt: float

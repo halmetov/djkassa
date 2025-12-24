@@ -14,6 +14,7 @@ from app.database.session import get_db
 from app.models.entities import Branch, Client, Debt, DebtPayment, Product, Return, Sale, SaleItem, Stock
 from app.models.user import User
 from app.schemas import sales as sales_schema
+from app.services.returns import calculate_return_breakdowns
 from app.services.inventory import adjust_stock
 
 router = APIRouter(redirect_slashes=False)
@@ -107,6 +108,7 @@ async def list_sales(
             raise HTTPException(status_code=400, detail="Сотрудник не привязан к филиалу")
         return_query = return_query.where(Return.branch_id == current_user.branch_id)
     returns = db.execute(return_query.order_by(Return.created_at.desc())).scalars().unique().all()
+    return_breakdowns = calculate_return_breakdowns(returns)
 
     debt_query = (
         select(DebtPayment)
@@ -133,8 +135,12 @@ async def list_sales(
         summaries.append(_map_sale_to_summary(sale))
 
     for return_entry in returns:
-        total_amount = sum(item.amount for item in return_entry.items)
         sale = return_entry.sale
+        breakdown = return_breakdowns.get(return_entry.id)
+        total_amount = breakdown.total if breakdown else sum(item.amount for item in return_entry.items)
+        paid_cash = -(breakdown.cash if breakdown else total_amount)
+        paid_card = -(breakdown.card if breakdown else 0)
+        paid_debt = -(breakdown.debt if breakdown else 0)
         summaries.append(
             sales_schema.SaleSummary(
                 id=return_entry.id,
@@ -147,9 +153,9 @@ async def list_sales(
                 client_id=sale.client_id if sale else None,
                 client_name=sale.client.name if sale and sale.client else None,
                 total_amount=-float(total_amount),
-                paid_cash=-float(total_amount),
-                paid_card=0,
-                paid_debt=0,
+                paid_cash=paid_cash,
+                paid_card=paid_card,
+                paid_debt=paid_debt,
                 payment_type="return",
             )
         )

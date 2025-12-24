@@ -22,10 +22,8 @@ async def list_branches(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     query = select(Branch)
-    if current_user.role == "employee":
-        if current_user.branch_id is None:
-            raise HTTPException(status_code=400, detail="Сотрудник не привязан к филиалу")
-        query = query.where(Branch.id == current_user.branch_id)
+    if current_user.role == "employee" and current_user.branch_id is None:
+        raise HTTPException(status_code=400, detail="Сотрудник не привязан к филиалу")
     result = db.execute(query)
     return result.scalars().all()
 
