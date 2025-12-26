@@ -10,20 +10,20 @@ export default defineConfig(({ mode }) => {
   const HOST = process.env.VITE_HOST || "0.0.0.0";   // можно поставить "192.168.8.79" или "med-alatau.local"
   const PORT = Number(process.env.VITE_PORT || 8080);
 
-  return {
-    server: {
-      host: HOST,         // фиксируем хост
-      port: PORT,         // фиксируем порт
-      strictPort: true,   // если порт занят — не прыгать на другой, а упасть с ошибкой
+    return {
+      server: {
+        host: HOST,         // фиксируем хост
+        port: PORT,         // фиксируем порт
+        strictPort: true,   // если порт занят — не прыгать на другой, а упасть с ошибкой
       // при работе по LAN иногда полезно:
       // hmr: { host: HOST, clientPort: PORT },
     },
-    plugins: [
-      react(),
-      mode === "development" && componentTagger(),
-    ].filter(Boolean),
-    resolve: {
-      alias: { "@": path.resolve(__dirname, "./src") },
+      plugins: [
+        react(),
+        mode === "development" && componentTagger(),
+      ].filter(Boolean),
+      resolve: {
+        alias: { "@": path.resolve(__dirname, "./src") },
     },
   };
 });

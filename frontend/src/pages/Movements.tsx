@@ -30,7 +30,13 @@ import { AuthUser, getCurrentUser } from "@/lib/auth";
 
 type Branch = { id: number; name: string; active: boolean };
 type StockItem = { product_id: number; product: string; quantity: number };
-type MovementItem = { product_id: number; quantity: number; available: number; product_name?: string };
+type MovementItem = {
+  product_id: number;
+  quantity: number;
+  quantityInput?: string;
+  available: number;
+  product_name?: string;
+};
 type MovementSummary = {
   id: number;
   from_branch_id: number;
@@ -55,6 +61,8 @@ const statusLabels: Record<string, string> = {
   done: "Завершено",
   rejected: "Отклонено",
 };
+
+const MIN_MOVEMENT_QTY = 1;
 
 export default function Movements() {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -172,7 +180,10 @@ export default function Movements() {
       toast.error("Выберите филиал-отправитель");
       return;
     }
-    setItems((prev) => [...prev, { product_id: 0, quantity: 1, available: 0 }]);
+    setItems((prev) => [
+      ...prev,
+      { product_id: 0, quantity: MIN_MOVEMENT_QTY, quantityInput: String(MIN_MOVEMENT_QTY), available: 0 },
+    ]);
   };
 
   const updateItem = (index: number, update: Partial<MovementItem>) => {
@@ -181,6 +192,22 @@ export default function Movements() {
       next[index] = { ...next[index], ...update };
       return next;
     });
+  };
+
+  const parseQuantityInput = (value?: string | number) => {
+    if (typeof value === "number") return Math.max(0, value);
+    if (value === undefined) return null;
+    const sanitized = value.replace(/[^0-9]/g, "");
+    if (sanitized === "") return null;
+    return Math.max(0, parseInt(sanitized, 10));
+  };
+
+  const normalizeQuantityInput = (value: string | undefined, max: number) => {
+    const parsed = parseQuantityInput(value);
+    const normalized = parsed === null || parsed < MIN_MOVEMENT_QTY ? MIN_MOVEMENT_QTY : parsed;
+    const clamped = Math.min(normalized, max);
+    const display = String(clamped);
+    return { parsed, clamped, display };
   };
 
   const handleCreateMovement = async () => {
@@ -197,15 +224,16 @@ export default function Movements() {
       return;
     }
     for (const item of items) {
+      const parsedQty = parseQuantityInput(item.quantityInput ?? item.quantity) ?? 0;
       if (!item.product_id) {
         toast.error("Выберите товар");
         return;
       }
-      if (item.quantity <= 0) {
+      if (parsedQty <= 0) {
         toast.error("Количество должно быть больше 0");
         return;
       }
-      if (item.quantity > item.available) {
+      if (parsedQty > item.available) {
         toast.error(`Доступно только ${item.available} для ${item.product_name || "товара"}`);
         return;
       }
@@ -217,7 +245,7 @@ export default function Movements() {
         comment: comment || null,
         items: items.map((item) => ({
           product_id: item.product_id,
-          quantity: item.quantity,
+          quantity: parseQuantityInput(item.quantityInput ?? item.quantity) ?? MIN_MOVEMENT_QTY,
           purchase_price: null,
           selling_price: null,
         })),
@@ -334,11 +362,14 @@ export default function Movements() {
                   value={item.product_id ? String(item.product_id) : ""}
                   onValueChange={(val) => {
                     const selected = stockOptions.find((opt) => opt.value === Number(val));
+                    const currentQty = parseQuantityInput(item.quantityInput ?? item.quantity) ?? MIN_MOVEMENT_QTY;
+                    const cappedQty = Math.min(currentQty, selected?.available || currentQty);
                     updateItem(index, {
                       product_id: Number(val),
                       available: selected?.available || 0,
                       product_name: selected?.label,
-                      quantity: Math.min(item.quantity, selected?.available || 0) || 1,
+                      quantity: cappedQty,
+                      quantityInput: item.quantityInput === "" ? "" : String(cappedQty || 0),
                     });
                   }}
                 >
@@ -358,17 +389,33 @@ export default function Movements() {
                 <Label>Количество</Label>
                 <Input
                   type="number"
-                  value={item.quantity}
-                  onChange={(e) => {
-                    const val = Math.max(1, Number(e.target.value) || 1);
-                    const capped = Math.min(val, item.available || 0);
-                    if (val > capped) {
-                      toast.error(`Доступно: ${capped}`);
+                  inputMode="numeric"
+                  value={item.quantityInput ?? String(item.quantity ?? 0)}
+                  onFocus={() => {
+                    if ((item.quantityInput ?? String(item.quantity)) === "0") {
+                      updateItem(index, { quantityInput: "", quantity: 0 });
                     }
-                    updateItem(index, { quantity: capped });
                   }}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const sanitized = raw.replace(/[^0-9]/g, "");
+                    const parsed = sanitized === "" ? 0 : parseInt(sanitized, 10);
+                    updateItem(index, { quantityInput: raw === "" ? "" : sanitized, quantity: parsed });
+                  }}
+                  onBlur={() => {
+                    const { clamped, display } = normalizeQuantityInput(item.quantityInput ?? "0", item.available || 0);
+                    updateItem(index, { quantity: clamped, quantityInput: display });
+                  }}
+                  className={
+                    (parseQuantityInput(item.quantityInput ?? item.quantity) ?? 0) > item.available
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : undefined
+                  }
                 />
                 <div className="text-xs text-muted-foreground">Доступно: {item.available}</div>
+                {(parseQuantityInput(item.quantityInput ?? item.quantity) ?? 0) > item.available && (
+                  <div className="text-xs text-destructive">Количество превышает доступный остаток</div>
+                )}
               </div>
               <div className="flex gap-2">
                 <Button

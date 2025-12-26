@@ -43,16 +43,16 @@ const menuItems = [
   { title: "Перемещение", url: "/movements", icon: ArrowLeftRight },
   { title: "Касса", url: "/pos", icon: ShoppingCart },
   { title: "Возврат", url: "/returns", icon: RotateCcw },
-  { title: "Отчет", url: "/reports", icon: FileText, adminOnly: true },
+  { title: "Отчет", url: "/reports", icon: FileText },
   { title: "Анализ", url: "/analysis", icon: BarChart3, adminOnly: true },
 ];
 
 const systemItems = [
   { title: "Категории", url: "/categories", icon: Tags, adminOnly: false },
   { title: "Товары", url: "/products", icon: Package, adminOnly: false },
-  { title: "Сотрудники", url: "/employees", icon: Users, adminOnly: false },
-  { title: "Филиалы", url: "/branches", icon: Building2, adminOnly: false },
   { title: "Клиенты", url: "/clients", icon: UserCircle, adminOnly: false },
+  { title: "Сотрудники", url: "/employees", icon: Users, adminOnly: true },
+  { title: "Филиалы", url: "/branches", icon: Building2, adminOnly: true },
 ];
 
 type AppSidebarProps = {
@@ -83,8 +83,7 @@ export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser
     "/products",
     "/movements",
     "/clients",
-    "/employees",
-    "/branches",
+    "/reports",
   ];
   const visibleMenuItems = user
     ? menuItems.filter((item) => {
@@ -188,7 +187,7 @@ export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser
                     .filter((item) => {
                       if (item.adminOnly && !isAdmin) return false;
                       if (isEmployee) {
-                        return ["/categories", "/products", "/clients", "/employees", "/branches"].includes(item.url);
+                        return ["/categories", "/products", "/clients"].includes(item.url);
                       }
                       return true;
                     })

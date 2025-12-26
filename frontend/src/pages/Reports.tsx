@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useOutletContext } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useOutletContext } from "react-router-dom";
+import { AuthUser } from "@/lib/auth";
 
 type SaleSummary = {
   id: number;
@@ -72,8 +73,24 @@ type SaleDetail = {
   items: SaleDetailItem[];
 };
 
+type ReportSummary = {
+  start_date: string;
+  end_date: string;
+  cash_total: number;
+  card_total: number;
+  debts_created_amount: number;
+  debt_payments_amount: number;
+  refunds_total: number;
+  sales_total: number;
+  grand_total: number;
+  total_debt_all_clients: number;
+};
+
+const formatDateInput = (date: Date) => date.toISOString().split("T")[0];
+const formatAmount = (value?: number | null) => (value ?? 0).toFixed(2);
+
 export default function Reports() {
-  const { user } = useOutletContext<{ user: { id: number; role: string } | null; isAdmin: boolean }>();
+  const { user } = useOutletContext<{ user: AuthUser | null }>();
   const [sales, setSales] = useState<SaleSummary[]>([]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -81,16 +98,28 @@ export default function Reports() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [sellers, setSellers] = useState<{ id: number; name: string }[]>([]);
   const [sellerFilter, setSellerFilter] = useState<string | null>("all");
+  const [summary, setSummary] = useState<ReportSummary | null>(null);
 
   useEffect(() => {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 30);
-    setEndDate(end.toISOString().split('T')[0]);
-    setStartDate(start.toISOString().split('T')[0]);
-    fetchSales(start, end);
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const startIso = formatDateInput(start);
+    const endIso = formatDateInput(now);
+    setEndDate(endIso);
+    setStartDate(startIso);
+    fetchReportData(start, now);
     loadSellers();
   }, []);
+
+  useEffect(() => {
+    if (!user || !startDate || !endDate) return;
+    if (user.role === "employee") {
+      const selfId = String(user.id);
+      setSellerFilter(selfId);
+      fetchReportData(new Date(startDate), new Date(endDate), selfId);
+    }
+  }, [user, startDate, endDate]);
 
   const loadSellers = async () => {
     try {
@@ -102,11 +131,26 @@ export default function Reports() {
     }
   };
 
+  const fetchSummary = async (start?: Date, end?: Date, sellerId?: string) => {
+    try {
+      const params = new URLSearchParams();
+      if (start) params.set("start_date", formatDateInput(start));
+      if (end) params.set("end_date", formatDateInput(end));
+      const seller = sellerId ?? sellerFilter;
+      if (seller && seller !== "all") params.set("seller_id", seller);
+      const data = await apiGet<ReportSummary>(`/api/reports/summary${params.toString() ? `?${params.toString()}` : ""}`);
+      setSummary(data);
+    } catch (error) {
+      console.error(error);
+      toast.error("Не удалось загрузить сводку отчета");
+    }
+  };
+
   const fetchSales = async (start?: Date, end?: Date, sellerId?: string) => {
     try {
       const params = new URLSearchParams();
-      if (start) params.set("start_date", start.toISOString().split('T')[0]);
-      if (end) params.set("end_date", end.toISOString().split('T')[0]);
+      if (start) params.set("start_date", formatDateInput(start));
+      if (end) params.set("end_date", formatDateInput(end));
       const seller = sellerId ?? sellerFilter;
       if (seller && seller !== "all") params.set("seller_id", seller);
       const data = await apiGet<SaleSummary[]>(`/api/sales${params.toString() ? `?${params.toString()}` : ""}`);
@@ -117,9 +161,13 @@ export default function Reports() {
     }
   };
 
+  const fetchReportData = async (start: Date, end: Date, sellerId?: string) => {
+    await Promise.all([fetchSales(start, end, sellerId), fetchSummary(start, end, sellerId)]);
+  };
+
   const handleFilter = () => {
     if (startDate && endDate) {
-      fetchSales(new Date(startDate), new Date(endDate));
+      fetchReportData(new Date(startDate), new Date(endDate));
     }
   };
 
@@ -138,14 +186,6 @@ export default function Reports() {
     }
   };
 
-  const getTotalSales = () => sales.reduce((sum, sale) => sum + sale.total_amount, 0);
-  const getTotalCash = () => sales.reduce((sum, sale) => sum + sale.paid_cash, 0);
-  const getTotalCard = () => sales.reduce((sum, sale) => sum + sale.paid_card, 0);
-  const getTotalCredit = () =>
-    sales
-      .filter((sale) => !sale.entry_type || sale.entry_type === "sale")
-      .reduce((sum, sale) => sum + sale.paid_debt, 0);
-
   const entryLabels: Record<string, string> = {
     sale: "Продажа",
     return: "Возврат",
@@ -156,11 +196,11 @@ export default function Reports() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Отчеты</h1>
-        <p className="text-muted-foreground">История продаж</p>
+        <p className="text-muted-foreground">История продаж и долгов</p>
       </div>
 
-      <Card className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <Card className="p-6 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <Label>Дата начала</Label>
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -169,7 +209,7 @@ export default function Reports() {
             <Label>Дата окончания</Label>
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end gap-2">
             <Button onClick={handleFilter} className="w-full">
               Применить фильтр
             </Button>
@@ -181,7 +221,7 @@ export default function Reports() {
               onValueChange={(val) => {
                 setSellerFilter(val);
                 if (startDate && endDate) {
-                  fetchSales(new Date(startDate), new Date(endDate), val);
+                  fetchReportData(new Date(startDate), new Date(endDate), val);
                 }
               }}
             >
@@ -202,22 +242,40 @@ export default function Reports() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <Card className="p-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card className="p-4 space-y-2">
             <div className="text-sm text-muted-foreground">Всего продаж</div>
-            <div className="text-2xl font-bold">{getTotalSales().toFixed(2)} ₸</div>
+            <div className="text-2xl font-bold">{formatAmount(summary?.grand_total)} ₸</div>
+            <p className="text-sm text-muted-foreground">
+              Продажи (с возвратами): {formatAmount(summary?.sales_total)} ₸
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Создано долгов: {formatAmount(summary?.debts_created_amount)} ₸
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Оплаты долгов: {formatAmount(summary?.debt_payments_amount)} ₸
+            </p>
           </Card>
-          <Card className="p-4">
+          <Card className="p-4 space-y-1">
             <div className="text-sm text-muted-foreground">Наличные</div>
-            <div className="text-2xl font-bold">{getTotalCash().toFixed(2)} ₸</div>
+            <div className="text-2xl font-bold">{formatAmount(summary?.cash_total)} ₸</div>
+            <p className="text-sm text-muted-foreground">С учётом возвратов и оплат долгов</p>
           </Card>
-          <Card className="p-4">
+          <Card className="p-4 space-y-1">
             <div className="text-sm text-muted-foreground">Карта</div>
-            <div className="text-2xl font-bold">{getTotalCard().toFixed(2)} ₸</div>
+            <div className="text-2xl font-bold">{formatAmount(summary?.card_total)} ₸</div>
+            <p className="text-sm text-muted-foreground">С учётом возвратов и оплат долгов</p>
           </Card>
-          <Card className="p-4">
-            <div className="text-sm text-muted-foreground">В долг</div>
-            <div className="text-2xl font-bold">{getTotalCredit().toFixed(2)} ₸</div>
+          <Card className="p-4 space-y-2">
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>Долги</span>
+              <span>всего: {formatAmount(summary?.total_debt_all_clients)} ₸</span>
+            </div>
+            <div className="space-y-1 text-sm text-muted-foreground">
+              <div>Долги за период: {formatAmount(summary?.debts_created_amount)} ₸</div>
+              <div>Оплаченные долги за период: {formatAmount(summary?.debt_payments_amount)} ₸</div>
+              <div>Всего долгов сейчас: {formatAmount(summary?.total_debt_all_clients)} ₸</div>
+            </div>
           </Card>
         </div>
 
@@ -237,8 +295,8 @@ export default function Reports() {
           </TableHeader>
           <TableBody>
             {sales.map((sale) => (
-              <TableRow key={sale.id}>
-                <TableCell>{new Date(sale.created_at).toLocaleString('ru-RU')}</TableCell>
+              <TableRow key={`${sale.entry_type}-${sale.id}-${sale.created_at}`}>
+                <TableCell>{new Date(sale.created_at).toLocaleString("ru-RU")}</TableCell>
                 <TableCell>{entryLabels[sale.entry_type || "sale"] || "Операция"}</TableCell>
                 <TableCell>{sale.seller_name || "-"}</TableCell>
                 <TableCell>{sale.branch_name || "-"}</TableCell>
@@ -265,7 +323,7 @@ export default function Reports() {
           {selectedSale && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>Дата: {new Date(selectedSale.created_at).toLocaleString('ru-RU')}</div>
+                <div>Дата: {new Date(selectedSale.created_at).toLocaleString("ru-RU")}</div>
                 <div>Филиал: {selectedSale.branch_name || "-"}</div>
                 <div>Адрес: {selectedSale.branch_address || "-"}</div>
                 <div>Сотрудник: {selectedSale.seller_name || "-"}</div>

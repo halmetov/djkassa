@@ -1,5 +1,4 @@
 import { useRef } from "react";
-import logo from "@/assets/logo.png";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -40,13 +39,16 @@ export function PrintableReceipt({ sale }: { sale: SaleDetail }) {
     printWindow.document.write(
       `<style>
         body { font-family: Arial, sans-serif; padding: 12px; }
-        .receipt { width: 320px; }
-        .header { text-align: center; }
-        .items { width: 100%; border-collapse: collapse; }
+        .receipt { width: 340px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 8px; }
+        .title { font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
+        .muted { color: #555; font-size: 12px; }
+        .items { width: 100%; border-collapse: collapse; margin-top: 12px; }
         .items th, .items td { text-align: left; padding: 4px 0; font-size: 12px; }
-        .items th { border-bottom: 1px solid #ccc; }
-        .totals { margin-top: 8px; font-size: 13px; }
-        .meta { font-size: 12px; color: #555; }
+        .items th { border-bottom: 1px solid #e5e5e5; font-weight: 600; }
+        .totals { margin-top: 10px; font-size: 13px; }
+        .totals div { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .divider { border-top: 1px dashed #d0d0d0; margin: 10px 0; }
       </style>`
     );
     printWindow.document.write("</head><body>");
@@ -64,7 +66,7 @@ export function PrintableReceipt({ sale }: { sale: SaleDetail }) {
       <Card className="p-4" ref={printRef}>
         <div className="receipt">
           <div className="header space-y-2">
-            <img src={logo} alt="Logo" className="mx-auto h-10" />
+            <div className="title">Отчет по продаже</div>
             <div className="font-semibold">{sale.branch_name || "Филиал"}</div>
             <div className="text-xs text-muted-foreground">{sale.branch_address || "Адрес не указан"}</div>
             <div className="text-xs">Чек № {sale.id}</div>
@@ -98,6 +100,7 @@ export function PrintableReceipt({ sale }: { sale: SaleDetail }) {
               <span>Итого</span>
               <span>{sale.total_amount.toFixed(2)} ₸</span>
             </div>
+            <div className="divider" />
             <div className="flex justify-between text-sm text-muted-foreground">
               <span>Оплачено</span>
               <span>{totalPaid.toFixed(2)} ₸</span>
@@ -106,6 +109,7 @@ export function PrintableReceipt({ sale }: { sale: SaleDetail }) {
               <span>Долг</span>
               <span>{sale.paid_debt.toFixed(2)} ₸</span>
             </div>
+            <div className="divider" />
             <div className="flex justify-between text-sm text-muted-foreground">
               <span>Кассир</span>
               <span>{sale.seller_name || "-"}</span>

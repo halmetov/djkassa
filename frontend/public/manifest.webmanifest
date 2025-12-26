@@ -1,0 +1,17 @@
+{
+  "name": "Kassa POS",
+  "short_name": "Kassa",
+  "description": "POS система для управления продажами и складом",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/placeholder.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

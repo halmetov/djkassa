@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.security import admin_only_for_write, get_current_user, hash_password
+from app.auth.security import get_current_user, hash_password, require_admin
 from app.database.session import get_db
 from app.models.user import User
 from app.schemas import users as user_schema
 
-router = APIRouter(redirect_slashes=False, dependencies=[Depends(admin_only_for_write)])
+router = APIRouter(redirect_slashes=False, dependencies=[Depends(require_admin)])
 
 
 @router.get("", response_model=list[user_schema.User])

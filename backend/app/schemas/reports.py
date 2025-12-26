@@ -64,3 +64,16 @@ class AnalyticsResponse(BaseModel):
     refunds_cash: float
     refunds_card: float
     refunds_debt: float
+
+
+class SummaryResponse(BaseModel):
+    start_date: date
+    end_date: date
+    cash_total: float
+    card_total: float
+    debts_created_amount: float
+    debt_payments_amount: float
+    refunds_total: float
+    sales_total: float
+    grand_total: float
+    total_debt_all_clients: float

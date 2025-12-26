@@ -1,10 +1,10 @@
 from functools import lru_cache
 from pathlib import Path
-
 from typing import List
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine.url import make_url, URL
 
 
 class Settings(BaseSettings):
@@ -63,11 +63,33 @@ class Settings(BaseSettings):
             "https://samen.inbrain.kz",
         ]
 
-
     @property
     def allowed_cors_regex(self) -> str | None:
-        return None
+        if self.cors_origin_regex:
+            return self.cors_origin_regex
+        return r"^http://192\.168\.\d+\.\d+:8080$"
 
+    @property
+    def sqlalchemy_url(self) -> URL:
+        return make_url(self.database_url)
+
+    @property
+    def safe_database_url(self) -> str:
+        return self.sqlalchemy_url.render_as_string(hide_password=True)
+
+    @property
+    def database_location(self) -> str:
+        url = self.sqlalchemy_url
+        host = url.host or "(local file)"
+        port = url.port or "(default)"
+        return f"{host}:{port}"
+
+    def safe_settings_dump(self) -> dict[str, object]:
+        data = self.model_dump()
+        data.pop("jwt_secret_key", None)
+        data.pop("admin_password", None)
+        data["database_url"] = self.safe_database_url
+        return data
 
 
 @lru_cache(maxsize=1)

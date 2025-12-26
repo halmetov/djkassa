@@ -2,6 +2,7 @@ import logging
 import sys
 import time
 from contextlib import asynccontextmanager
+from pprint import pformat
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,14 +41,42 @@ logging.basicConfig(
 )
 
 
+def log_startup_configuration() -> None:
+    logger.info("Starting FastAPI application")
+    logger.info("Environment: %s | Debug: %s", settings.environment, settings.debug)
+    logger.info("Database URL: %s (location: %s)", settings.safe_database_url, settings.database_location)
+    logger.info("Media root: %s", settings.media_root_path)
+    logger.info("CORS allowed origins: %s", ", ".join(settings.allowed_cors_origins))
+    logger.info(
+        "Settings snapshot (safe):\n%s",
+        pformat(settings.safe_settings_dump()),
+    )
+
+
+def log_registered_routes(application: FastAPI) -> None:
+    route_entries: list[str] = []
+    for route in application.routes:
+        methods = getattr(route, "methods", None)
+        if not methods:
+            continue
+        filtered_methods = sorted(method for method in methods if method not in {"HEAD", "OPTIONS"})
+        if not filtered_methods:
+            continue
+        route_entries.append(f"{','.join(filtered_methods)} {route.path}")
+
+    for entry in sorted(set(route_entries)):
+        logger.info("Route registered: %s", entry)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    log_startup_configuration()
     logger.info("Application startup: running bootstrap")
     try:
         bootstrap(settings)
-    except Exception:
+    except Exception as exc:
         logger.exception("Application bootstrap failed")
-        raise
+        raise SystemExit("Application failed to start; see logs above for details.") from exc
     yield
     logger.info("Application shutdown complete")
 
@@ -112,6 +141,8 @@ app.include_router(routes_debts.router, prefix="/api/debts", tags=["debts"])
 media_root = settings.media_root_path
 media_root.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=media_root), name="static")
+
+log_registered_routes(app)
 
 
 @app.get("/api/health", tags=["system"])

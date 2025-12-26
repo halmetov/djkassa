@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
-import { apiDelete, apiGet, apiPost } from "@/api/client";
+import { apiGet, apiPost } from "@/api/client";
 
 type Branch = { id: number; name: string; active?: boolean };
 type Product = { id: number; name: string; purchase_price: number; sale_price: number };
@@ -193,18 +193,6 @@ export default function Income() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Удалить приход?")) return;
-    try {
-      await apiDelete(`/api/income/${id}`);
-      toast.success("Приход удален");
-      fetchIncomes();
-    } catch (error) {
-      console.error(error);
-      toast.error("Ошибка при удалении");
-    }
-  };
-
   const getProductName = (id: number) => products.find((product) => product.id === id)?.name || `#${id}`;
   const getBranchName = (id: number) => branches.find((branch) => branch.id === id)?.name || `Филиал ${id}`;
 
@@ -373,7 +361,6 @@ export default function Income() {
                     <TableHead>Дата</TableHead>
                     <TableHead>Филиал</TableHead>
                     <TableHead>Товары</TableHead>
-                    <TableHead className="w-[80px]">Действия</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -389,11 +376,6 @@ export default function Income() {
                             </li>
                           ))}
                         </ul>
-                      </TableCell>
-                      <TableCell>
-                        <Button size="icon" variant="ghost" onClick={() => handleDelete(income.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

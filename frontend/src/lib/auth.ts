@@ -1,4 +1,5 @@
 import { API_URL } from "@/lib/api-url";
+import { clearCartState } from "@/lib/cartStorage";
 
 const ACCESS_TOKEN_KEY = "kassa_access_token";
 const REFRESH_TOKEN_KEY = "kassa_refresh_token";
@@ -32,14 +33,20 @@ export function clearTokens() {
 }
 
 export async function login(login: string, password: string) {
-  const response = await fetch(`${API_URL}/api/auth/login`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    credentials: "include",
-    body: new URLSearchParams({ username: login, password }).toString(),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      credentials: "include",
+      body: new URLSearchParams({ username: login, password }).toString(),
+    });
+  } catch (error) {
+    console.warn("Login request failed", error);
+    throw new Error("Сервер недоступен. Проверь что backend запущен.");
+  }
   if (!response.ok) {
     const contentType = response.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
@@ -78,12 +85,18 @@ export async function refreshAccessToken() {
 export async function getCurrentUser(): Promise<AuthUser | null> {
   const token = getAccessToken();
   if (!token) return null;
-  const response = await fetch(`${API_URL}/api/auth/me`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    credentials: "include",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/api/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      credentials: "include",
+    });
+  } catch (error) {
+    console.warn("Failed to fetch current user", error);
+    return null;
+  }
   if (response.status === 401) {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
@@ -92,25 +105,13 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     return null;
   }
   if (!response.ok) {
-    let detail: string | null = null;
-    try {
-      const body = await response.json();
-      detail = body?.detail || body?.message;
-    } catch {
-      // ignore parse errors, fallback to text
-    }
-    if (!detail) {
-      try {
-        detail = await response.text();
-      } catch {
-        detail = null;
-      }
-    }
-    throw new Error(detail || `Не удалось получить профиль (status ${response.status})`);
+    console.warn("getCurrentUser returned non-OK status", response.status);
+    return null;
   }
   return response.json();
 }
 
 export function signOut() {
   clearTokens();
+  clearCartState();
 }

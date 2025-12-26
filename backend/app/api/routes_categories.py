@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.auth.security import admin_only_for_write, require_employee
+from app.auth.security import require_admin, require_employee
 from app.database.session import get_db
 from app.models.entities import Category, Product
 from app.schemas import categories as category_schema
@@ -20,7 +20,7 @@ async def list_categories(db: Session = Depends(get_db)):
     return result.scalars().all()
 
 
-@router.post("", response_model=category_schema.Category, dependencies=[Depends(admin_only_for_write)])
+@router.post("", response_model=category_schema.Category, dependencies=[Depends(require_employee)])
 async def create_category(payload: category_schema.CategoryCreate, db: Session = Depends(get_db)):
     category = Category(name=payload.name)
     db.add(category)
@@ -29,7 +29,7 @@ async def create_category(payload: category_schema.CategoryCreate, db: Session =
     return category
 
 
-@router.put("/{category_id}", response_model=category_schema.Category, dependencies=[Depends(admin_only_for_write)])
+@router.put("/{category_id}", response_model=category_schema.Category, dependencies=[Depends(require_admin)])
 async def update_category(category_id: int, payload: category_schema.CategoryUpdate, db: Session = Depends(get_db)):
     category = db.get(Category, category_id)
     if not category:
@@ -40,7 +40,7 @@ async def update_category(category_id: int, payload: category_schema.CategoryUpd
     return category
 
 
-@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only_for_write)])
+@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)])
 async def delete_category(category_id: int, db: Session = Depends(get_db)):
     category = db.get(Category, category_id)
     if not category:

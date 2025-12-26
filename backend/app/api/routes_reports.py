@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth.security import require_admin
 from app.database.session import get_db
-from app.models.entities import Branch, DebtPayment, Product, Return, Sale, SaleItem, User
+from app.models.entities import Branch, Client, Debt, DebtPayment, Product, Return, Sale, SaleItem, User
 from app.schemas import reports as report_schema
 from app.services.returns import calculate_return_breakdowns
 
@@ -23,10 +23,130 @@ def _apply_date_filters(query, start_date: date | None, end_date: date | None, c
 
 @router.get(
     "/summary",
-    response_model=report_schema.ReportsResponse,
+    response_model=report_schema.SummaryResponse,
     dependencies=[Depends(require_admin)],
 )
 async def get_summary(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    branch_id: int | None = None,
+    seller_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    if start_date and not end_date:
+        end_date = start_date
+    if end_date and not start_date:
+        start_date = end_date
+    start_date = start_date or date.today()
+    end_date = end_date or start_date
+    start_dt = datetime.combine(start_date, time.min)
+    end_dt = datetime.combine(end_date, time.max)
+
+    sale_filters = [Sale.created_at >= start_dt, Sale.created_at <= end_dt]
+    if branch_id:
+        sale_filters.append(Sale.branch_id == branch_id)
+    if seller_id:
+        sale_filters.append(Sale.seller_id == seller_id)
+
+    sales_total, cash_total, card_total, _ = db.execute(
+        select(
+            func.coalesce(func.sum(Sale.total_amount), 0),
+            func.coalesce(func.sum(Sale.paid_cash), 0),
+            func.coalesce(func.sum(Sale.paid_card), 0),
+            func.coalesce(func.sum(Sale.paid_debt), 0),
+        ).where(*sale_filters)
+    ).one()
+
+    return_query = (
+        select(Return)
+        .options(
+            selectinload(Return.items),
+            joinedload(Return.sale),
+        )
+        .where(Return.created_at >= start_dt, Return.created_at <= end_dt)
+    )
+    if branch_id:
+        return_query = return_query.where(Return.branch_id == branch_id)
+    if seller_id:
+        return_query = return_query.where(Return.created_by_id == seller_id)
+    return_entries = db.execute(return_query).scalars().unique().all()
+    return_breakdowns = calculate_return_breakdowns(return_entries)
+    refunds_total = sum(b.total for b in return_breakdowns.values())
+    refunds_cash = sum(b.cash for b in return_breakdowns.values())
+    refunds_card = sum(b.card for b in return_breakdowns.values())
+    refunds_debt = sum(b.debt for b in return_breakdowns.values())
+
+    debt_filters = [
+        DebtPayment.created_at >= start_dt,
+        DebtPayment.created_at <= end_dt,
+    ]
+    if branch_id:
+        debt_filters.append(DebtPayment.branch_id == branch_id)
+    if seller_id:
+        debt_filters.append(DebtPayment.processed_by_id == seller_id)
+
+    debt_payment_cash, debt_payment_card, debt_payments_amount = db.execute(
+        select(
+            func.coalesce(
+                func.sum(
+                    case((DebtPayment.payment_type == "cash", DebtPayment.amount), else_=0)
+                ),
+                0,
+            ),
+            func.coalesce(
+                func.sum(
+                    case((DebtPayment.payment_type != "cash", DebtPayment.amount), else_=0)
+                ),
+                0,
+            ),
+            func.coalesce(func.sum(DebtPayment.amount), 0),
+        ).where(*debt_filters)
+    ).one()
+
+    debt_created_query = select(func.coalesce(func.sum(Debt.amount), 0)).select_from(Debt)
+    if branch_id or seller_id:
+        debt_created_query = debt_created_query.select_from(Debt.__table__.join(Sale, Debt.sale_id == Sale.id))
+        if branch_id:
+            debt_created_query = debt_created_query.where(Sale.branch_id == branch_id)
+        if seller_id:
+            debt_created_query = debt_created_query.where(Sale.seller_id == seller_id)
+    debt_created_query = debt_created_query.where(Debt.created_at >= start_dt, Debt.created_at <= end_dt)
+    debts_created_amount = db.execute(debt_created_query).scalar() or 0
+
+    total_debt_all_clients = db.execute(select(func.coalesce(func.sum(Client.total_debt), 0))).scalar() or 0
+
+    cash_sales_net = float(cash_total or 0) - float(refunds_cash)
+    card_sales_net = float(card_total or 0) - float(refunds_card)
+    debt_payments_amount = float(debt_payments_amount or 0)
+    debts_created_amount = float(debts_created_amount or 0)
+
+    cash_total_value = cash_sales_net + float(debt_payment_cash or 0)
+    card_total_value = card_sales_net + float(debt_payment_card or 0)
+
+    sales_total_value = float(sales_total or 0) - float(refunds_total)
+
+    grand_total = cash_sales_net + card_sales_net + debts_created_amount + debt_payments_amount - float(refunds_debt)
+
+    return report_schema.SummaryResponse(
+        start_date=start_date,
+        end_date=end_date,
+        cash_total=cash_total_value,
+        card_total=card_total_value,
+        debts_created_amount=debts_created_amount,
+        debt_payments_amount=debt_payments_amount,
+        refunds_total=float(refunds_total or 0),
+        sales_total=sales_total_value,
+        grand_total=grand_total,
+        total_debt_all_clients=float(total_debt_all_clients or 0),
+    )
+
+
+@router.get(
+    "/summary/operations",
+    response_model=report_schema.ReportsResponse,
+    dependencies=[Depends(require_admin)],
+)
+async def get_operations_summary(
     start_date: date | None = None,
     end_date: date | None = None,
     branch_id: int | None = None,

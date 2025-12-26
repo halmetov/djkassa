@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.security import admin_only_for_write, get_current_user, require_employee
+from app.auth.security import get_current_user, require_admin, require_employee
 from app.database.session import get_db
 from app.models.entities import Branch, Product, Stock
 from app.models.user import User
@@ -28,7 +28,7 @@ async def list_branches(
     return result.scalars().all()
 
 
-@router.post("", response_model=branch_schema.Branch, dependencies=[Depends(admin_only_for_write)])
+@router.post("", response_model=branch_schema.Branch, dependencies=[Depends(require_admin)])
 async def create_branch(payload: branch_schema.BranchCreate, db: Session = Depends(get_db)):
     branch = Branch(**payload.dict())
     db.add(branch)
@@ -40,7 +40,7 @@ async def create_branch(payload: branch_schema.BranchCreate, db: Session = Depen
 @router.put(
     "/{branch_id}",
     response_model=branch_schema.Branch,
-    dependencies=[Depends(admin_only_for_write)],
+    dependencies=[Depends(require_admin)],
 )
 async def update_branch(branch_id: int, payload: branch_schema.BranchUpdate, db: Session = Depends(get_db)):
     branch = db.get(Branch, branch_id)
@@ -56,7 +56,7 @@ async def update_branch(branch_id: int, payload: branch_schema.BranchUpdate, db:
 @router.delete(
     "/{branch_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(admin_only_for_write)],
+    dependencies=[Depends(require_admin)],
 )
 async def delete_branch(branch_id: int, db: Session = Depends(get_db)):
     branch = db.get(Branch, branch_id)
@@ -82,19 +82,20 @@ async def branch_stock(
         target_branch = current_user.branch_id
 
     result = db.execute(
-        select(Stock, Product.name)
+        select(Stock, Product)
         .join(Product, Stock.product_id == Product.id)
         .where(Stock.branch_id == target_branch)
     )
     response = []
-    for stock, product_name in result.all():
+    for stock, product in result.all():
         response.append(
             {
                 "id": stock.id,
                 "product_id": stock.product_id,
-                "product": product_name,
+                "product": product.name,
                 "quantity": stock.quantity,
-                "limit": stock.product.limit if stock.product else None,
+                "limit": product.limit,
+                "purchase_price": product.purchase_price,
             }
         )
     return response

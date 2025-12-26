@@ -88,20 +88,4 @@ async def delete_income(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    income = db.get(Income, income_id)
-    if not income:
-        raise HTTPException(status_code=404, detail="Income not found")
-    if current_user.role == "employee":
-        if current_user.branch_id is None:
-            raise HTTPException(status_code=400, detail="Сотрудник не привязан к филиалу")
-        if income.branch_id != current_user.branch_id:
-            raise HTTPException(status_code=403, detail="Нет доступа к приходу")
-    db.refresh(income, attribute_names=["items"])
-    for item in income.items:
-        product = db.get(Product, item.product_id)
-        if product:
-            product.quantity = max(product.quantity - item.quantity, 0)
-        adjust_stock(db, income.branch_id, item.product_id, -item.quantity)
-    db.delete(income)
-    db.commit()
-    return None
+    raise HTTPException(status_code=403, detail="Удаление приходов запрещено")

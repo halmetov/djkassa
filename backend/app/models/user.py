@@ -64,6 +64,14 @@ class User(Base):
     debt_payments = relationship(
         "DebtPayment",
         back_populates="processed_by",
+        foreign_keys="DebtPayment.processed_by_id",
+        cascade="all, delete-orphan",
+    )
+
+    created_debt_payments = relationship(
+        "DebtPayment",
+        back_populates="created_by",
+        foreign_keys="DebtPayment.created_by_id",
         cascade="all, delete-orphan",
     )
 
