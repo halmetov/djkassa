@@ -41,6 +41,7 @@ class Product(Base, TimestampMixin):
     sale_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=0, server_default=text("0"))
     wholesale_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=0, server_default=text("0"))
     limit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0, server_default=text("0"))
+    rating: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0, server_default=text("0"))
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
 
     category: Mapped[Optional[Category]] = relationship(back_populates="products")
@@ -140,6 +141,19 @@ class Income(Base, TimestampMixin):
     created_by: Mapped["User"] = relationship("User", back_populates="incomes")
     branch: Mapped[Branch] = relationship()
     items: Mapped[List[IncomeItem]] = relationship(back_populates="income", cascade="all, delete-orphan")
+
+
+class Expense(Base, TimestampMixin):
+    __tablename__ = "expenses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"), server_default=text("0"))
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    branch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("branches.id", ondelete="SET NULL"), nullable=True)
+
+    created_by: Mapped["User"] = relationship("User")
+    branch: Mapped[Optional[Branch]] = relationship("Branch")
 
 
 class IncomeItem(Base):

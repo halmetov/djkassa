@@ -84,13 +84,17 @@ export default function Movements() {
         const current = await getCurrentUser();
         if (current) {
           setUser(current);
-          if (current.role === "employee" && current.branch_id) {
-            setFromBranch(String(current.branch_id));
-          }
         }
         const branchesData = await apiGet<Branch[]>("/api/branches");
         const activeBranches = branchesData.filter((b) => b.active);
         setBranches(activeBranches);
+        if (activeBranches.length > 0) {
+          setFromBranch(String(activeBranches[0].id));
+          const second = activeBranches.find((b) => b.id !== activeBranches[0].id);
+          if (second) {
+            setToBranch(String(second.id));
+          }
+        }
       } catch (error) {
         console.error(error);
         toast.error("Не удалось загрузить данные филиалов");
@@ -124,15 +128,9 @@ export default function Movements() {
     try {
       const params = new URLSearchParams();
       params.set("status", "waiting");
-      if (user?.branch_id) {
-        params.set("branch_id", String(user.branch_id));
-      }
       const query = params.toString();
       const data = await apiGet<MovementSummary[]>(`/api/movements?${query}`);
-      const incomingForBranch = user?.branch_id
-        ? data.filter((m) => m.to_branch_id === user.branch_id)
-        : data;
-      setIncoming(incomingForBranch);
+      setIncoming(data);
     } catch (error) {
       console.error(error);
       toast.error("Не удалось загрузить входящие перемещения");
@@ -144,9 +142,6 @@ export default function Movements() {
       const params = new URLSearchParams();
       if (historyStatus !== "all") {
         params.set("status", historyStatus);
-      }
-      if (user?.branch_id) {
-        params.set("branch_id", String(user.branch_id));
       }
       const query = params.toString();
       const data = await apiGet<MovementSummary[]>(`/api/movements${query ? `?${query}` : ""}`);
@@ -160,20 +155,9 @@ export default function Movements() {
   const stockOptions = useMemo(() => stock.map((s) => ({ value: s.product_id, label: s.product, available: s.quantity })), [stock]);
   const toBranchOptions = useMemo(
     () =>
-      branches.filter((b) =>
-        user?.role === "admin" || !fromBranch ? true : b.id !== Number(fromBranch)
-      ),
-    [branches, fromBranch, user?.role]
+      branches.filter((b) => (!fromBranch ? true : b.id !== Number(fromBranch))),
+    [branches, fromBranch]
   );
-
-  useEffect(() => {
-    if (user?.role === "employee" && fromBranch) {
-      const firstOther = branches.find((b) => b.id !== Number(fromBranch));
-      if (firstOther && (!toBranch || Number(toBranch) === Number(fromBranch))) {
-        setToBranch(String(firstOther.id));
-      }
-    }
-  }, [branches, fromBranch, toBranch, user?.role]);
 
   const handleAddItemRow = () => {
     if (!fromBranch) {

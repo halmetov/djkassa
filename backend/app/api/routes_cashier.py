@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.auth.security import get_current_user
@@ -33,6 +33,11 @@ async def list_cashier_products(
         select(Product, Stock)
         .join(Stock, (Stock.product_id == Product.id) & (Stock.branch_id == sale_branch.id), isouter=True)
         .options(joinedload(Product.category))
+        .order_by(
+            case((Product.rating.is_(None) | (Product.rating == 0), 0), else_=1),
+            Product.rating.asc(),
+            Product.name.asc(),
+        )
     )
     rows = db.execute(query).all()
     items: list[CashierProduct] = []
@@ -48,6 +53,7 @@ async def list_cashier_products(
                 photo=product.photo,
                 available_qty=stock.quantity if stock else 0,
                 category=product.category.name if product.category else None,
+                rating=product.rating or 0,
             )
         )
     return items

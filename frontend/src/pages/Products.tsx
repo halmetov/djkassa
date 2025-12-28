@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Pencil, Trash2, Check, X } from "lucide-react";
+import { Pencil, Trash2, Check, X, Eye } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -22,6 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface Product {
   id: number;
@@ -36,6 +43,7 @@ interface Product {
   quantity: number;
   image_url?: string | null;
   photo?: string | null;
+  rating?: number | null;
 }
 
 export default function Products() {
@@ -45,6 +53,8 @@ export default function Products() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [newPhotoFile, setNewPhotoFile] = useState<File | null>(null);
   const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -55,9 +65,10 @@ export default function Products() {
     sale_price: "0",
     wholesale_price: "0",
     limit: "0",
+    rating: "0",
   });
 
-  const [editData, setEditData] = useState<any>({});
+  const [editData, setEditData] = useState<any>({ rating: "0" });
 
   useEffect(() => {
     fetchProducts();
@@ -68,6 +79,7 @@ export default function Products() {
     try {
       const data = await apiGet<Product[]>("/api/products");
       setProducts(data);
+      setSelectedProduct((prev) => (prev ? data.find((p) => p.id === prev.id) || prev : prev));
     } catch (error) {
       console.error(error);
       toast.error("Ошибка загрузки товаров");
@@ -98,6 +110,7 @@ export default function Products() {
       sale_price: parseFloat(formData.sale_price) || 0,
       wholesale_price: parseFloat(formData.wholesale_price) || 0,
       limit: parseInt(formData.limit) || 0,
+      rating: Math.max(0, parseInt(formData.rating, 10) || 0),
     };
 
     try {
@@ -130,6 +143,7 @@ export default function Products() {
       sale_price: "0",
       wholesale_price: "0",
       limit: "0",
+      rating: "0",
     });
     setNewPhotoFile(null);
     fetchProducts();
@@ -146,8 +160,10 @@ export default function Products() {
       sale_price: product.sale_price.toString(),
       wholesale_price: product.wholesale_price.toString(),
       limit: (product.limit ?? 0).toString(),
+      rating: (product.rating ?? 0).toString(),
     });
     setEditPhotoFile(null);
+    setSelectedProduct(product);
   };
 
   const handleSave = async (id: number) => {
@@ -161,6 +177,7 @@ export default function Products() {
         sale_price: parseFloat(editData.sale_price) || 0,
         wholesale_price: parseFloat(editData.wholesale_price) || 0,
         limit: parseInt(editData.limit) || 0,
+        rating: Math.max(0, parseInt(editData.rating, 10) || 0),
       });
 
       if (editPhotoFile) {
@@ -177,6 +194,22 @@ export default function Products() {
       setEditingId(null);
       setEditPhotoFile(null);
       fetchProducts();
+      setSelectedProduct((prev) =>
+        prev && prev.id === id
+          ? {
+              ...prev,
+              name: editData.name,
+              category_id: editData.category_id ? Number(editData.category_id) : null,
+              unit: editData.unit,
+              barcode: editData.barcode || null,
+              purchase_price: parseFloat(editData.purchase_price) || 0,
+              sale_price: parseFloat(editData.sale_price) || 0,
+              wholesale_price: parseFloat(editData.wholesale_price) || 0,
+              limit: parseInt(editData.limit) || 0,
+              rating: Math.max(0, parseInt(editData.rating, 10) || 0),
+            }
+          : prev,
+      );
     } catch (error) {
       console.error(error);
       const status = (error as any)?.status;
@@ -189,10 +222,15 @@ export default function Products() {
   };
 
   const handleDelete = async (id: number) => {
+    if (!window.confirm("Удалить товар?")) return;
     try {
       await apiDelete(`/api/products/${id}`);
       toast.success("Товар удален");
       fetchProducts();
+      if (selectedProduct?.id === id) {
+        setSelectedProduct(null);
+        setShowDetails(false);
+      }
     } catch (error) {
       console.error(error);
       const status = (error as any)?.status;
@@ -202,6 +240,21 @@ export default function Products() {
         toast.error("Ошибка удаления");
       }
     }
+  };
+
+  const getCategoryName = (id: number | null) =>
+    categories.find((cat) => cat.id === id)?.name || "Без категории";
+
+  const openDetails = (product: Product) => {
+    setSelectedProduct(product);
+    setShowDetails(true);
+    setEditingId(null);
+    setEditPhotoFile(null);
+  };
+
+  const startEditInModal = (product: Product) => {
+    openDetails(product);
+    handleEdit(product);
   };
 
   return (
@@ -297,6 +350,15 @@ export default function Products() {
               onChange={(e) => setFormData({ ...formData, limit: e.target.value })}
             />
           </div>
+          <div>
+            <Label>Рейтинг</Label>
+            <Input
+              type="number"
+              value={formData.rating}
+              onChange={(e) => setFormData({ ...formData, rating: e.target.value })}
+              min={0}
+            />
+          </div>
         </div>
         <Button onClick={handleAdd}>Добавить товар</Button>
       </Card>
@@ -308,40 +370,17 @@ export default function Products() {
               <TableRow>
                 <TableHead>Фото</TableHead>
                 <TableHead>Название</TableHead>
-                <TableHead>Категория</TableHead>
-                <TableHead>Ед.изм</TableHead>
-                <TableHead>Штрих-код</TableHead>
-                <TableHead>Приход</TableHead>
-                <TableHead>Продажа</TableHead>
-                <TableHead>Оптом</TableHead>
-                <TableHead>Лимит</TableHead>
                 <TableHead>Кол-во</TableHead>
                 <TableHead className="w-[100px]">Действия</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
             {products.map((product) => {
-              const categoryName = categories.find((cat) => cat.id === product.category_id)?.name || "Без категории";
+              const categoryName = getCategoryName(product.category_id);
               return (
               <TableRow key={product.id}>
                   <TableCell>
-                    {editingId === product.id ? (
-                      <div className="space-y-2">
-                        {(product.image_url || product.photo) && (
-                          <img
-                            src={product.image_url || product.photo || ""}
-                            alt={product.name}
-                            className="h-12 w-12 object-cover rounded"
-                          />
-                        )}
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          onChange={(e) => setEditPhotoFile(e.target.files?.[0] || null)}
-                        />
-                      </div>
-                    ) : product.image_url || product.photo ? (
+                    {product.image_url || product.photo ? (
                       <img
                         src={product.image_url || product.photo || ""}
                         alt={product.name}
@@ -352,151 +391,20 @@ export default function Products() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {editingId === product.id ? (
-                      <Input
-                        value={editData.name}
-                        onChange={(e) => setEditData({ ...editData, name: e.target.value })}
-                      />
-                    ) : (
-                      product.name
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {editingId === product.id ? (
-                      <Select
-                        value={editData.category_id}
-                        onValueChange={(value) => setEditData({ ...editData, category_id: value })}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((cat) => (
-                            <SelectItem key={cat.id} value={String(cat.id)}>
-                              {cat.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      categoryName
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {editingId === product.id ? (
-                      <Input
-                        value={editData.unit}
-                        onChange={(e) => setEditData({ ...editData, unit: e.target.value })}
-                        className="w-20"
-                      />
-                    ) : (
-                      product.unit
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {editingId === product.id ? (
-                      <Input
-                        value={editData.barcode}
-                        onChange={(e) => setEditData({ ...editData, barcode: e.target.value })}
-                      />
-                    ) : (
-                      product.barcode || "-"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {editingId === product.id ? (
-                      <Input
-                        type="number"
-                        value={editData.purchase_price}
-                        onChange={(e) => setEditData({ ...editData, purchase_price: e.target.value })}
-                        className="w-24"
-                      />
-                    ) : (
-                      product.purchase_price
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {editingId === product.id ? (
-                      <Input
-                        type="number"
-                        value={editData.sale_price}
-                        onChange={(e) => setEditData({ ...editData, sale_price: e.target.value })}
-                        className="w-24"
-                      />
-                    ) : (
-                      product.sale_price
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {editingId === product.id ? (
-                      <Input
-                        type="number"
-                        value={editData.wholesale_price}
-                        onChange={(e) => setEditData({ ...editData, wholesale_price: e.target.value })}
-                        className="w-24"
-                      />
-                    ) : (
-                      product.wholesale_price
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {editingId === product.id ? (
-                      <Input
-                        type="number"
-                        value={editData.limit}
-                        onChange={(e) => setEditData({ ...editData, limit: e.target.value })}
-                        className="w-20"
-                      />
-                    ) : (
-                      product.limit ?? 0
-                    )}
+                    <div className="space-y-1">
+                      <div className="font-medium">{product.name}</div>
+                      <div className="text-xs text-muted-foreground">{categoryName}</div>
+                    </div>
                   </TableCell>
                   <TableCell className={product.quantity <= (product.limit ?? 0) ? "text-destructive font-semibold" : ""}>
                     {product.quantity}
                   </TableCell>
                   <TableCell>
-                    {isAdmin && (
-                      <div className="flex gap-2">
-                        {editingId === product.id ? (
-                          <>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleSave(product.id)}
-                            >
-                              <Check className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => {
-                                setEditingId(null);
-                                setEditPhotoFile(null);
-                              }}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleEdit(product)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleDelete(product.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex gap-2">
+                      <Button size="icon" variant="ghost" onClick={() => openDetails(product)}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -505,6 +413,193 @@ export default function Products() {
           </Table>
         </div>
       </Card>
+
+      <Dialog
+        open={showDetails}
+        onOpenChange={(open) => {
+          setShowDetails(open);
+          if (!open) {
+            setEditingId(null);
+            setEditPhotoFile(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Подробнее о товаре</DialogTitle>
+          </DialogHeader>
+          {selectedProduct && (
+            <div className="space-y-4">
+              <div className="flex gap-4 flex-col sm:flex-row">
+                <div className="w-full sm:w-40 flex-shrink-0">
+                  {editingId === selectedProduct.id ? (
+                    <div className="space-y-2">
+                      {(selectedProduct.image_url || selectedProduct.photo) && (
+                        <img
+                          src={selectedProduct.image_url || selectedProduct.photo || ""}
+                          alt={selectedProduct.name}
+                          className="h-32 w-full object-cover rounded"
+                        />
+                      )}
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(e) => setEditPhotoFile(e.target.files?.[0] || null)}
+                      />
+                    </div>
+                  ) : selectedProduct.image_url || selectedProduct.photo ? (
+                    <img
+                      src={selectedProduct.image_url || selectedProduct.photo || ""}
+                      alt={selectedProduct.name}
+                      className="h-32 w-full object-cover rounded"
+                    />
+                  ) : (
+                    <div className="text-muted-foreground text-sm">Нет фото</div>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm flex-1">
+                  <div><span className="text-muted-foreground">Название:</span> {selectedProduct.name}</div>
+                  <div>
+                    <span className="text-muted-foreground">Категория:</span> {getCategoryName(selectedProduct.category_id)}
+                  </div>
+                  <div><span className="text-muted-foreground">Штрих-код:</span> {selectedProduct.barcode || "-"}</div>
+                  <div><span className="text-muted-foreground">Ед. изм:</span> {selectedProduct.unit}</div>
+                  <div><span className="text-muted-foreground">Цена прихода:</span> {selectedProduct.purchase_price} ₸</div>
+                  <div><span className="text-muted-foreground">Цена продажи:</span> {selectedProduct.sale_price} ₸</div>
+                  <div><span className="text-muted-foreground">Цена оптом:</span> {selectedProduct.wholesale_price} ₸</div>
+                  <div><span className="text-muted-foreground">Лимит:</span> {selectedProduct.limit ?? 0}</div>
+                  <div><span className="text-muted-foreground">Рейтинг:</span> {selectedProduct.rating ?? 0}</div>
+                  <div><span className="text-muted-foreground">Доступно:</span> {selectedProduct.quantity}</div>
+                </div>
+              </div>
+
+              {editingId === selectedProduct.id ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <Label>Название</Label>
+                    <Input
+                      value={editData.name}
+                      onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Категория</Label>
+                    <Select
+                      value={editData.category_id}
+                      onValueChange={(value) => setEditData({ ...editData, category_id: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Без категории" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat.id} value={String(cat.id)}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Ед. измерения</Label>
+                    <Input
+                      value={editData.unit}
+                      onChange={(e) => setEditData({ ...editData, unit: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Штрих-код</Label>
+                    <Input
+                      value={editData.barcode}
+                      onChange={(e) => setEditData({ ...editData, barcode: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Цена прихода</Label>
+                    <Input
+                      type="number"
+                      value={editData.purchase_price}
+                      onChange={(e) => setEditData({ ...editData, purchase_price: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Цена продажи</Label>
+                    <Input
+                      type="number"
+                      value={editData.sale_price}
+                      onChange={(e) => setEditData({ ...editData, sale_price: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Цена оптом</Label>
+                    <Input
+                      type="number"
+                      value={editData.wholesale_price}
+                      onChange={(e) => setEditData({ ...editData, wholesale_price: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Лимит</Label>
+                    <Input
+                      type="number"
+                      value={editData.limit}
+                      onChange={(e) => setEditData({ ...editData, limit: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Рейтинг</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={editData.rating}
+                      onChange={(e) => setEditData({ ...editData, rating: e.target.value })}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  Последнее обновление: данные товара отображены полностью. Нажмите «Редактировать», чтобы внести изменения.
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:justify-between">
+            {isAdmin && selectedProduct && (
+              <div className="flex gap-2">
+                {editingId === selectedProduct.id ? (
+                  <>
+                    <Button onClick={() => handleSave(selectedProduct.id)}>
+                      <Check className="h-4 w-4 mr-2" /> Сохранить
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setEditingId(null);
+                        setEditPhotoFile(null);
+                      }}
+                    >
+                      <X className="h-4 w-4 mr-2" /> Отмена
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="outline" onClick={() => startEditInModal(selectedProduct)}>
+                      <Pencil className="h-4 w-4 mr-2" /> Изменить
+                    </Button>
+                    <Button variant="destructive" onClick={() => handleDelete(selectedProduct.id)}>
+                      <Trash2 className="h-4 w-4 mr-2" /> Удалить
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+            <Button variant="secondary" onClick={() => setShowDetails(false)}>
+              Закрыть
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

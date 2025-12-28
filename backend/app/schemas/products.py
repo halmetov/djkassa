@@ -14,6 +14,7 @@ class ProductBase(BaseModel):
     sale_price: float | None = 0
     wholesale_price: float | None = 0
     limit: int | None = 0
+    rating: int | None = 0
     image_url: str | None = None
     photo: str | None = None
 
@@ -27,6 +28,13 @@ class ProductBase(BaseModel):
             raise ValueError("Название товара не может быть пустым")
         return cleaned
 
+    @field_validator("rating")
+    @classmethod
+    def validate_rating(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
+        return max(0, value)
+
 
 class ProductCreate(ProductBase):
     name: str = Field(..., min_length=1)
@@ -34,11 +42,13 @@ class ProductCreate(ProductBase):
 
 class ProductUpdate(ProductBase):
     name: str | None = Field(default=None, min_length=1)
+    rating: int | None = None
 
 
 class Product(ProductBase):
     id: int
     quantity: int
+    rating: int | None = 0
     created_at: datetime
     updated_at: datetime
 

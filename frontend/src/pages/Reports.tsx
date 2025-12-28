@@ -282,29 +282,24 @@ export default function Reports() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Дата</TableHead>
-              <TableHead>Тип</TableHead>
+              <TableHead>Номер заказа</TableHead>
               <TableHead>Сотрудник</TableHead>
-              <TableHead>Филиал</TableHead>
               <TableHead className="text-right">Сумма</TableHead>
-              <TableHead className="text-right">Наличные</TableHead>
-              <TableHead className="text-right">Карта</TableHead>
-              <TableHead className="text-right">Долг</TableHead>
-              <TableHead></TableHead>
+              <TableHead className="text-right">Действия</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sales.map((sale) => (
               <TableRow key={`${sale.entry_type}-${sale.id}-${sale.created_at}`}>
-                <TableCell>{new Date(sale.created_at).toLocaleString("ru-RU")}</TableCell>
-                <TableCell>{entryLabels[sale.entry_type || "sale"] || "Операция"}</TableCell>
-                <TableCell>{sale.seller_name || "-"}</TableCell>
-                <TableCell>{sale.branch_name || "-"}</TableCell>
-                <TableCell className="text-right font-medium">{sale.total_amount.toFixed(2)} ₸</TableCell>
-                <TableCell className="text-right">{sale.paid_cash.toFixed(2)} ₸</TableCell>
-                <TableCell className="text-right">{sale.paid_card.toFixed(2)} ₸</TableCell>
-                <TableCell className="text-right">{sale.paid_debt.toFixed(2)} ₸</TableCell>
                 <TableCell>
+                  <div className="font-medium">#{sale.id}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {entryLabels[sale.entry_type || "sale"] || "Операция"} • {new Date(sale.created_at).toLocaleString("ru-RU")}
+                  </div>
+                </TableCell>
+                <TableCell>{sale.seller_name || "-"}</TableCell>
+                <TableCell className="text-right font-medium">{sale.total_amount.toFixed(2)} ₸</TableCell>
+                <TableCell className="text-right">
                   <Button size="icon" variant="ghost" onClick={() => viewDetails(sale)}>
                     <Eye className="h-4 w-4" />
                   </Button>
@@ -322,13 +317,17 @@ export default function Reports() {
           </DialogHeader>
           {selectedSale && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                 <div>Дата: {new Date(selectedSale.created_at).toLocaleString("ru-RU")}</div>
+                <div>Сотрудник: {selectedSale.seller_name || "-"}</div>
                 <div>Филиал: {selectedSale.branch_name || "-"}</div>
                 <div>Адрес: {selectedSale.branch_address || "-"}</div>
-                <div>Сотрудник: {selectedSale.seller_name || "-"}</div>
                 <div>Клиент: {selectedSale.client_name || "-"}</div>
-                <div>Оплата: {selectedSale.payment_type}</div>
+                <div>Тип оплаты: {selectedSale.payment_type}</div>
+                <div>Наличные: {selectedSale.paid_cash.toFixed(2)} ₸</div>
+                <div>Карта: {selectedSale.paid_card.toFixed(2)} ₸</div>
+                <div>В долг: {selectedSale.paid_debt.toFixed(2)} ₸</div>
+                <div className="font-semibold">Итого: {selectedSale.total_amount.toFixed(2)} ₸</div>
               </div>
               <Table>
                 <TableHeader>

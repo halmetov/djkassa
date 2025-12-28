@@ -29,12 +29,8 @@ def _status_from_db(value: str) -> MovementStatus:
 
 
 def _validate_branch_access(branch_id: int, current_user: User) -> None:
-    if current_user.role == "admin":
-        return
-    if current_user.branch_id is None:
-        raise HTTPException(status_code=403, detail="Сотрудник не привязан к филиалу")
-    if current_user.branch_id != branch_id:
-        raise HTTPException(status_code=403, detail="Нет доступа к указанному филиалу")
+    if branch_id is None:
+        raise HTTPException(status_code=400, detail="Не указан филиал для перемещения")
 
 
 def _ensure_movement_access(movement: Movement | None, current_user: User) -> Movement:
@@ -67,13 +63,6 @@ def _apply_filters(
         query = query.where(Movement.created_at >= _date_bounds(start_date, True))
     if end_date:
         query = query.where(Movement.created_at <= _date_bounds(end_date, False))
-    if current_user.role == "employee":
-        if current_user.branch_id is None:
-            raise HTTPException(status_code=403, detail="Сотрудник не привязан к филиалу")
-        query = query.where(
-            (Movement.from_branch_id == current_user.branch_id)
-            | (Movement.to_branch_id == current_user.branch_id)
-        )
     return query
 
 

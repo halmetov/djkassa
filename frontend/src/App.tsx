@@ -18,6 +18,7 @@ import Returns from "./pages/Returns";
 import Analysis from "./pages/Analysis";
 import NotFound from "./pages/NotFound";
 import Movements from "./pages/Movements";
+import Expenses from "./pages/Expenses";
 
 const queryClient = new QueryClient();
 
@@ -37,6 +38,7 @@ const App = () => (
             <Route path="/reports" element={<Reports />} />
             <Route path="/returns" element={<Returns />} />
             <Route path="/movements" element={<Movements />} />
+            <Route path="/expenses" element={<Expenses />} />
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/categories" element={<Categories />} />
             <Route path="/products" element={<Products />} />

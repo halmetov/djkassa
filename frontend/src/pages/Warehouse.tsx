@@ -148,7 +148,6 @@ export default function Warehouse() {
             <TableHeader>
               <TableRow>
                 <TableHead>Товар</TableHead>
-                <TableHead>Филиал</TableHead>
                 <TableHead className="text-right">Количество</TableHead>
                 <TableHead className="text-right">Лимит</TableHead>
               </TableRow>
@@ -157,7 +156,6 @@ export default function Warehouse() {
               {lowStock.map((item) => (
                 <TableRow key={`${item.id}-${item.branch}`}>
                   <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell>{item.branch}</TableCell>
                   <TableCell className="text-right">{item.quantity}</TableCell>
                   <TableCell className="text-right">{item.limit}</TableCell>
                 </TableRow>

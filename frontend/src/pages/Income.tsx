@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
 import { apiGet, apiPost } from "@/api/client";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 type Branch = { id: number; name: string; active?: boolean };
 type Product = { id: number; name: string; purchase_price: number; sale_price: number };
@@ -17,6 +18,7 @@ type IncomeRecord = { id: number; branch_id: number; created_at: string; items: 
 type InvoiceItemForm = { product_id: string; quantity: string; purchase_price: string; sale_price: string };
 
 export default function Income() {
+  const isMobile = useIsMobile();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [incomes, setIncomes] = useState<IncomeRecord[]>([]);
@@ -211,7 +213,10 @@ export default function Income() {
         </TabsList>
 
         <TabsContent value="receipt" className="space-y-4">
-          <form onSubmit={handleAdd} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 p-4 border rounded-lg bg-card">
+          <form
+            onSubmit={handleAdd}
+            className="grid gap-4 p-4 border rounded-lg bg-card md:grid-cols-2 lg:grid-cols-3"
+          >
             <div className="space-y-2">
               <Label htmlFor="branch">Филиал</Label>
               <Select value={formData.branch_id} onValueChange={(value) => setFormData({ ...formData, branch_id: value })}>
@@ -244,18 +249,33 @@ export default function Income() {
             </div>
             <div className="space-y-2">
               <Label>Количество</Label>
-              <Input type="number" value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: e.target.value })} />
+              <Input
+                type="number"
+                value={formData.quantity}
+                inputMode="decimal"
+                onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+              />
             </div>
             <div className="space-y-2">
               <Label>Цена закупки</Label>
-              <Input type="number" value={formData.purchase_price} onChange={(e) => setFormData({ ...formData, purchase_price: e.target.value })} />
+              <Input
+                type="number"
+                value={formData.purchase_price}
+                inputMode="decimal"
+                onChange={(e) => setFormData({ ...formData, purchase_price: e.target.value })}
+              />
             </div>
             <div className="space-y-2">
               <Label>Цена продажи</Label>
-              <Input type="number" value={formData.sale_price} onChange={(e) => setFormData({ ...formData, sale_price: e.target.value })} />
+              <Input
+                type="number"
+                value={formData.sale_price}
+                inputMode="decimal"
+                onChange={(e) => setFormData({ ...formData, sale_price: e.target.value })}
+              />
             </div>
             <div className="flex items-end">
-              <Button type="submit" className="w-full">
+              <Button type="submit" className="w-full" size={isMobile ? "lg" : "default"}>
                 Добавить приход
               </Button>
             </div>
@@ -283,71 +303,161 @@ export default function Income() {
               </Select>
             </div>
 
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-[200px]">Товар</TableHead>
-                    <TableHead className="min-w-[120px]">Количество</TableHead>
-                    <TableHead className="min-w-[160px]">Цена закупки</TableHead>
-                    <TableHead className="min-w-[160px]">Цена продажи</TableHead>
-                    <TableHead className="w-[60px]" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {invoiceData.items.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>
-                        <Select value={item.product_id} onValueChange={(value) => handleInvoiceProductChange(index, value)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Выберите товар" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {products.map((product) => (
-                              <SelectItem key={product.id} value={String(product.id)}>
-                                {product.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => updateInvoiceItem(index, "quantity", e.target.value)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={item.purchase_price}
-                          onChange={(e) => updateInvoiceItem(index, "purchase_price", e.target.value)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={item.sale_price}
-                          onChange={(e) => updateInvoiceItem(index, "sale_price", e.target.value)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Button type="button" variant="ghost" size="icon" onClick={() => removeInvoiceItem(index)}>
+            {isMobile ? (
+              <div className="space-y-3">
+                {invoiceData.items.map((item, index) => {
+                  const productName = products.find((p) => p.id === Number(item.product_id))?.name;
+                  const total =
+                    (Number(item.purchase_price) || 0) * (Number(item.quantity) || 0);
+                  return (
+                    <Card key={index} className="p-3 space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-2 flex-1">
+                          <Label className="text-xs text-muted-foreground">Товар</Label>
+                          <Select
+                            value={item.product_id}
+                            onValueChange={(value) => handleInvoiceProductChange(index, value)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Выберите товар" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {products.map((product) => (
+                                <SelectItem key={product.id} value={String(product.id)}>
+                                  {product.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {productName && (
+                            <p className="text-xs text-muted-foreground truncate">{productName}</p>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeInvoiceItem(index)}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                      </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={addInvoiceItem}>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Количество</Label>
+                          <Input
+                            type="number"
+                            value={item.quantity}
+                            inputMode="decimal"
+                            onChange={(e) => updateInvoiceItem(index, "quantity", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Цена закупки</Label>
+                          <Input
+                            type="number"
+                            value={item.purchase_price}
+                            inputMode="decimal"
+                            onChange={(e) => updateInvoiceItem(index, "purchase_price", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Цена продажи</Label>
+                          <Input
+                            type="number"
+                            value={item.sale_price}
+                            inputMode="decimal"
+                            onChange={(e) => updateInvoiceItem(index, "sale_price", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1 text-sm text-muted-foreground">
+                          <div>Итого: {total ? `${total.toFixed(2)} ₸` : "-"}</div>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[200px]">Товар</TableHead>
+                      <TableHead className="min-w-[120px]">Количество</TableHead>
+                      <TableHead className="min-w-[160px]">Цена закупки</TableHead>
+                      <TableHead className="min-w-[160px]">Цена продажи</TableHead>
+                      <TableHead className="min-w-[140px]">Итого</TableHead>
+                      <TableHead className="w-[60px]" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {invoiceData.items.map((item, index) => (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <Select
+                            value={item.product_id}
+                            onValueChange={(value) => handleInvoiceProductChange(index, value)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Выберите товар" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {products.map((product) => (
+                                <SelectItem key={product.id} value={String(product.id)}>
+                                  {product.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) => updateInvoiceItem(index, "quantity", e.target.value)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            value={item.purchase_price}
+                            onChange={(e) => updateInvoiceItem(index, "purchase_price", e.target.value)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            value={item.sale_price}
+                            onChange={(e) => updateInvoiceItem(index, "sale_price", e.target.value)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {((Number(item.purchase_price) || 0) * (Number(item.quantity) || 0)).toFixed(2)} ₸
+                        </TableCell>
+                        <TableCell>
+                          <Button type="button" variant="ghost" size="icon" onClick={() => removeInvoiceItem(index)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <div
+              className="flex flex-wrap gap-2 sticky bottom-0 bg-card/80 backdrop-blur p-3 border-t"
+              style={{ paddingBottom: isMobile ? "calc(env(safe-area-inset-bottom, 0px) + 10px)" : undefined }}
+            >
+              <Button type="button" variant="outline" onClick={addInvoiceItem} className="flex-1 min-w-[140px]">
                 + Добавить строку
               </Button>
-              <Button type="submit">Сохранить приход</Button>
+              <Button type="submit" className="flex-1 min-w-[160px]" size={isMobile ? "lg" : "default"}>
+                Сохранить приход
+              </Button>
             </div>
           </form>
         </TabsContent>

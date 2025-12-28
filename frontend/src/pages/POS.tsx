@@ -40,6 +40,7 @@ interface Product {
   photo?: string | null;
   available_qty: number;
   category?: string | null;
+  rating?: number | null;
 }
 
 interface Client {
@@ -87,6 +88,24 @@ export default function POS() {
 
   const MIN_QUANTITY = 1;
   const isMobile = useIsMobile();
+  const cartBadgeCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
+
+  const normalizeRating = useCallback((value?: number | null) => value ?? 0, []);
+
+  const sortProductsByRating = useCallback(
+    (list: Product[]) =>
+      [...list].sort((a, b) => {
+        const ratingA = normalizeRating(a.rating);
+        const ratingB = normalizeRating(b.rating);
+        const groupA = ratingA === 0 ? 0 : 1;
+        const groupB = ratingB === 0 ? 0 : 1;
+
+        if (groupA !== groupB) return groupA - groupB;
+        if (ratingA !== ratingB) return ratingA - ratingB;
+        return a.name.localeCompare(b.name);
+      }),
+    [normalizeRating],
+  );
 
   const parseQuantityInput = useCallback((value?: string | number) => {
     if (typeof value === "number") return Math.max(0, value);
@@ -172,15 +191,20 @@ export default function POS() {
     setIsLoadingProducts(true);
     try {
       const productsData = await apiGet<Product[]>(`/api/cashier/products`);
-      setProducts(productsData);
-      syncCartWithStock(productsData);
+      const normalized = productsData.map((product) => ({
+        ...product,
+        rating: normalizeRating(product.rating),
+      }));
+      const sorted = sortProductsByRating(normalized);
+      setProducts(sorted);
+      syncCartWithStock(sorted);
     } catch (error: any) {
       console.error(error);
       toast.error(error?.message || "Не удалось загрузить товары");
     } finally {
       setIsLoadingProducts(false);
     }
-  }, [syncCartWithStock]);
+  }, [normalizeRating, sortProductsByRating, syncCartWithStock]);
 
   useEffect(() => {
     loadProducts();
@@ -216,7 +240,7 @@ export default function POS() {
         (p) => p.name.toLowerCase().includes(query) || p.barcode?.toLowerCase().includes(query),
       );
     }
-    setFilteredProducts(filtered);
+    setFilteredProducts(sortProductsByRating(filtered));
   };
 
   const addToCart = (product: Product) => {
@@ -335,6 +359,16 @@ export default function POS() {
 
   const removeFromCart = (product_id: number) => {
     setCart(cart.filter((item) => item.product_id !== product_id));
+  };
+
+  const decreaseFromCard = (product_id: number) => {
+    const item = cart.find((cartItem) => cartItem.product_id === product_id);
+    if (!item) return;
+    if (item.quantity <= MIN_QUANTITY) {
+      removeFromCart(product_id);
+      return;
+    }
+    updateQuantity(product_id, -1);
   };
 
   const getTotalAmount = () => cart.reduce((sum, item) => sum + item.total, 0);
@@ -504,32 +538,101 @@ export default function POS() {
         </div>
 
         <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {filteredProducts.map((product) => (
-            <Card
-              key={product.id}
-              className="p-4 cursor-pointer hover:border-primary transition"
-              onClick={() => addToCart(product)}
-            >
-              {(product.image_url || product.photo) && (
-                <div className="mb-3 flex justify-center">
-                  <img
-                    src={product.image_url || product.photo || ""}
-                    alt={product.name}
-                    className="h-24 w-24 object-cover rounded"
-                  />
+          {filteredProducts.map((product) => {
+            const cartItem = cart.find((item) => item.product_id === product.id);
+            const quantity = cartItem?.quantity ?? 0;
+
+            return (
+              <Card
+                key={product.id}
+                className="overflow-hidden cursor-pointer hover:border-primary transition"
+                onClick={() => addToCart(product)}
+              >
+                <div className="relative bg-muted/40">
+                  {product.image_url || product.photo ? (
+                    <img
+                      src={product.image_url || product.photo || ""}
+                      alt={product.name}
+                      className="h-36 w-full object-cover"
+                    />
+                  ) : (
+                    <div className="h-36 w-full flex items-center justify-center text-muted-foreground text-sm">
+                      Нет фото
+                    </div>
+                  )}
+
+                  <div className="absolute top-2 left-2 rounded-full bg-background/90 px-2 py-1 text-xs font-semibold shadow">
+                    {product.available_qty}
+                  </div>
+
+                  {product.barcode && (
+                    <div className="absolute top-2 right-2 rounded bg-background/90 px-2 py-1 text-[10px] text-muted-foreground shadow">
+                      {product.barcode}
+                    </div>
+                  )}
                 </div>
-              )}
-              <div className="font-semibold">{product.name}</div>
-              <div className="text-sm text-muted-foreground">
-                {product.sale_price.toFixed(2)} ₸ {product.unit ? `/ ${product.unit}` : ""}
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">Остаток: {product.available_qty}</div>
-              {product.barcode && (
-                <div className="text-xs text-muted-foreground mt-1">Штрихкод: {product.barcode}</div>
-              )}
-              {isLoadingProducts && <div className="text-xs text-muted-foreground mt-1">Обновление...</div>}
-            </Card>
-          ))}
+
+                <div className="p-3 flex items-end gap-3">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div
+                      className="font-semibold leading-tight overflow-hidden"
+                      style={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                      }}
+                    >
+                      {product.name}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {product.sale_price.toFixed(2)} ₸ {product.unit ? `/ ${product.unit}` : ""}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center" onClick={(event) => event.stopPropagation()}>
+                    {quantity > 0 ? (
+                      <div className="flex items-center gap-1 rounded-full border bg-background px-2 py-1 shadow-sm">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            decreaseFromCard(product.id);
+                          }}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <div className="min-w-[28px] text-center text-sm font-semibold">{quantity}</div>
+                        <Button
+                          size="icon"
+                          variant="default"
+                          className="h-8 w-8"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            addToCart(product);
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        size="icon"
+                        className="h-9 w-9 rounded-full"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          addToCart(product);
+                        }}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       </div>
 
@@ -636,7 +739,10 @@ export default function POS() {
       </Card>
 
       {isMobile && (
-        <div className="fixed bottom-0 left-0 right-0 border-t bg-card grid grid-cols-2">
+        <div
+          className="fixed bottom-0 left-0 right-0 border-t bg-card grid grid-cols-2"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)" }}
+        >
           <Button
             variant={activeTab === "products" ? "default" : "ghost"}
             className="rounded-none"
@@ -650,6 +756,11 @@ export default function POS() {
             onClick={() => setActiveTab("cart")}
           >
             <ShoppingCart className="h-4 w-4 mr-2" /> Корзина
+            {cartBadgeCount > 0 && (
+              <span className="ml-2 inline-flex items-center justify-center rounded-full bg-destructive px-2 text-xs font-semibold text-destructive-foreground">
+                {cartBadgeCount}
+              </span>
+            )}
           </Button>
         </div>
       )}

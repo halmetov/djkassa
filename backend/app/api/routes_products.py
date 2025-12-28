@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -40,6 +40,12 @@ async def list_products(
             .where(Stock.branch_id == target_branch_id)
             .distinct()
         )
+
+    query = query.order_by(
+        case((Product.rating.is_(None) | (Product.rating == 0), 0), else_=1),
+        Product.rating.asc(),
+        Product.name.asc(),
+    )
 
     result = db.execute(query)
     return result.scalars().all()

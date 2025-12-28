@@ -27,6 +27,7 @@ import {
   LogOut,
   UserCircle,
   ArrowLeftRight,
+  HandCoins,
 } from "lucide-react";
 import {
   Collapsible,
@@ -44,6 +45,7 @@ const menuItems = [
   { title: "Касса", url: "/pos", icon: ShoppingCart },
   { title: "Возврат", url: "/returns", icon: RotateCcw },
   { title: "Отчет", url: "/reports", icon: FileText },
+  { title: "Расход", url: "/expenses", icon: HandCoins, adminOnly: true },
   { title: "Анализ", url: "/analysis", icon: BarChart3, adminOnly: true },
 ];
 

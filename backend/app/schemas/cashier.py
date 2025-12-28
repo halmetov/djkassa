@@ -12,6 +12,7 @@ class CashierProduct(BaseModel):
     photo: Optional[str] = None
     available_qty: int
     category: Optional[str] = None
+    rating: Optional[int] = 0
 
     class Config:
         from_attributes = True
