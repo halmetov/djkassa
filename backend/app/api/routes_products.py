@@ -35,10 +35,8 @@ async def list_products(
 
     query = select(Product)
     if target_branch_id is not None:
-        query = (
-            query.join(Stock, Stock.product_id == Product.id)
-            .where(Stock.branch_id == target_branch_id)
-            .distinct()
+        query = query.join(Stock, Stock.product_id == Product.id).where(
+            Stock.branch_id == target_branch_id
         )
 
     query = query.order_by(

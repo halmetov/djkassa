@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.auth.security import require_admin
+from app.auth.security import get_current_user
+from app.core.enums import UserRole
 from app.database.session import get_db
 from app.models.entities import Branch, Client, Debt, DebtPayment, Product, Return, Sale, SaleItem, User
 from app.schemas import reports as report_schema
@@ -21,10 +22,34 @@ def _apply_date_filters(query, start_date: date | None, end_date: date | None, c
     return query
 
 
+def _resolve_report_scope(
+    current_user: User, seller_id: int | None, branch_id: int | None
+) -> tuple[int | None, int | None]:
+    role_value = current_user.role.value if isinstance(current_user.role, UserRole) else current_user.role
+    is_admin = role_value == UserRole.ADMIN.value
+    effective_branch_id = branch_id
+    effective_seller_id = seller_id
+
+    if not is_admin:
+        if seller_id is not None and seller_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        effective_seller_id = current_user.id
+
+        if branch_id is None:
+            effective_branch_id = current_user.branch_id
+        elif current_user.branch_id is not None and branch_id != current_user.branch_id:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    return effective_seller_id, effective_branch_id
+
+
 @router.get(
     "/summary",
     response_model=report_schema.SummaryResponse,
-    dependencies=[Depends(require_admin)],
+    description=(
+        "Admins see all data. Employees are limited to their own sales: "
+        "if no seller_id is provided, the current user is applied automatically."
+    ),
 )
 async def get_summary(
     start_date: date | None = None,
@@ -32,6 +57,7 @@ async def get_summary(
     branch_id: int | None = None,
     seller_id: int | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     if start_date and not end_date:
         end_date = start_date
@@ -41,6 +67,8 @@ async def get_summary(
     end_date = end_date or start_date
     start_dt = datetime.combine(start_date, time.min)
     end_dt = datetime.combine(end_date, time.max)
+
+    seller_id, branch_id = _resolve_report_scope(current_user, seller_id, branch_id)
 
     sale_filters = [Sale.created_at >= start_dt, Sale.created_at <= end_dt]
     if branch_id:
@@ -144,7 +172,10 @@ async def get_summary(
 @router.get(
     "/summary/operations",
     response_model=report_schema.ReportsResponse,
-    dependencies=[Depends(require_admin)],
+    description=(
+        "Admins can see all operations. Employees are limited to their own entries; "
+        "when no seller_id is provided, the current user is enforced."
+    ),
 )
 async def get_operations_summary(
     start_date: date | None = None,
@@ -152,7 +183,10 @@ async def get_operations_summary(
     branch_id: int | None = None,
     seller_id: int | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    seller_id, branch_id = _resolve_report_scope(current_user, seller_id, branch_id)
+
     branch_clause_sale = Sale.branch_id == branch_id if branch_id else None
 
     base_query = select(Sale, User.name, Branch.name).join(User).join(Branch)
@@ -276,7 +310,10 @@ async def get_operations_summary(
 @router.get(
     "/analytics",
     response_model=report_schema.AnalyticsResponse,
-    dependencies=[Depends(require_admin)],
+    description=(
+        "Admins can access all analytics. Employees are restricted to their own sales; "
+        "seller_id defaults to the current user for non-admins."
+    ),
 )
 async def get_analytics(
     start_date: date | None = None,
@@ -284,7 +321,10 @@ async def get_analytics(
     branch_id: int | None = None,
     seller_id: int | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    seller_id, branch_id = _resolve_report_scope(current_user, seller_id, branch_id)
+
     if not start_date or not end_date:
         end_date = end_date or date.today()
         start_date = start_date or (end_date - timedelta(days=30))

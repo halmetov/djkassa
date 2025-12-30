@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
+import traceback
 from contextlib import contextmanager
-from typing import Iterable
+from threading import Thread
+from typing import Callable, Iterable
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -49,10 +52,54 @@ def check_database_connection() -> None:
     logger.info("Database connection OK")
 
 
-def apply_migrations(settings: Settings) -> None:
-    logger.info("Applying migrations on startup (upgrade head)")
-    run_migrations_on_startup(settings)
-    logger.info("Migrations applied successfully")
+def apply_migrations(settings: Settings, *, timeout_seconds: float = 30.0) -> None:
+    env = (settings.environment or "").lower()
+    if env == "dev":
+        logger.info("Environment is 'dev'; skipping automatic migrations on startup. Run alembic upgrade head manually if needed.")
+        return
+
+    if not settings.auto_run_migrations:
+        logger.info("Automatic migrations disabled via configuration; skipping startup migrations")
+        return
+
+    logger.info("Applying migrations on startup (upgrade head) in background thread")
+    result: dict[str, object | None] = {"error": None, "traceback": None}
+
+    def _run() -> None:
+        worker_start = time.perf_counter()
+        logger.info("[migrations] Worker starting (upgrade head)")
+        try:
+            run_migrations_on_startup(settings, raise_on_error=False)
+        except Exception as exc:  # pragma: no cover - runtime safeguard
+            result["error"] = exc
+            result["traceback"] = traceback.format_exc()
+            logger.error(
+                "[migrations] Worker failed after %.2fs", time.perf_counter() - worker_start, exc_info=exc
+            )
+        else:
+            logger.info("[migrations] Worker finished successfully in %.2fs", time.perf_counter() - worker_start)
+
+    start = time.perf_counter()
+    thread = Thread(target=_run, name="alembic-upgrade-worker", daemon=True)
+    thread.start()
+    thread.join(timeout_seconds)
+    elapsed = time.perf_counter() - start
+
+    if thread.is_alive():
+        logger.warning(
+            "Migrations still running after %.2fs (timeout=%.0fs); continuing startup while migration thread remains in background",
+            elapsed,
+            timeout_seconds,
+        )
+    elif result.get("error"):
+        logger.error(
+            "Migrations finished with errors after %.2fs; API will still start. Error: %s\n%s",
+            elapsed,
+            result["error"],
+            result.get("traceback", ""),
+        )
+    else:
+        logger.info("Migrations applied successfully in %.2fs", elapsed)
 
 
 def ensure_admin_user(settings: Settings) -> None:
@@ -109,13 +156,34 @@ def ensure_default_branches(settings: Settings) -> None:
         logger.info("Default branches already exist")
 
 
+def _run_step(name: str, func: Callable[[], None]) -> None:
+    logger.info("[bootstrap] START %s", name)
+    start = time.perf_counter()
+    try:
+        func()
+    except Exception:
+        elapsed = time.perf_counter() - start
+        logger.exception("[bootstrap] FAILED %s | elapsed=%.2fs", name, elapsed)
+    else:
+        elapsed = time.perf_counter() - start
+        logger.info("[bootstrap] DONE %s | elapsed=%.2fs", name, elapsed)
+
+
 def bootstrap(settings: Settings) -> None:
     logger.info("Starting application bootstrap")
-    check_database_connection()
-    apply_migrations(settings)
-    ensure_default_branches(settings)
-    ensure_admin_user(settings)
-    logger.info("Bootstrap completed successfully")
+    overall_start = time.perf_counter()
+
+    steps: list[tuple[str, Callable[[], None]]] = [
+        ("check db", check_database_connection),
+        ("run migrations", lambda: apply_migrations(settings)),
+        ("seed branches", lambda: ensure_default_branches(settings)),
+        ("seed admin user", lambda: ensure_admin_user(settings)),
+    ]
+
+    for name, func in steps:
+        _run_step(name, func)
+
+    logger.info("Bootstrap completed | total_elapsed=%.2fs", time.perf_counter() - overall_start)
 
 
 def main() -> None:

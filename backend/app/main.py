@@ -4,8 +4,9 @@ import time
 from contextlib import asynccontextmanager
 from pprint import pformat
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 from app.api import (
@@ -73,11 +74,14 @@ def log_registered_routes(application: FastAPI) -> None:
 async def lifespan(app: FastAPI):
     log_startup_configuration()
     logger.info("Application startup: running bootstrap")
+    startup_start = time.perf_counter()
     try:
         bootstrap(settings)
-    except Exception as exc:
-        logger.exception("Application bootstrap failed")
-        raise SystemExit("Application failed to start; see logs above for details.") from exc
+    except Exception:
+        logger.exception(
+            "Application bootstrap failed; API will continue to start regardless of bootstrap errors"
+        )
+    logger.info("Application startup complete. elapsed=%.2fs", time.perf_counter() - startup_start)
     yield
     logger.info("Application shutdown complete")
 
@@ -85,13 +89,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Kassa API", version="1.0.0", redirect_slashes=False, lifespan=lifespan)
 app.router.redirect_slashes = False
 
+cors_origins = set(settings.allowed_cors_origins)
+cors_origins.update({"http://localhost:8080", "http://127.0.0.1:8080"})
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_cors_origins,
+    allow_origins=sorted(cors_origins),
     allow_origin_regex=settings.allowed_cors_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 register_error_handlers(app)
@@ -124,6 +132,13 @@ async def log_requests(request: Request, call_next):
     )
     return response
 
+
+# Keep CORSMiddleware as the outermost wrapper so error responses also carry CORS headers
+app.user_middleware = sorted(
+    app.user_middleware, key=lambda middleware: 0 if middleware.cls is CORSMiddleware else 1
+)
+app.middleware_stack = app.build_middleware_stack()
+
 app.include_router(routes_auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(routes_users.router, prefix="/api/users", tags=["users"])
 app.include_router(routes_categories.router, prefix="/api/categories", tags=["categories"])
@@ -145,6 +160,32 @@ media_root.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=media_root), name="static")
 
 log_registered_routes(app)
+
+
+frontend_dist_dir = settings.project_root / "frontend" / "dist"
+frontend_index = frontend_dist_dir / "index.html"
+
+assets_dir = frontend_dist_dir / "assets"
+if assets_dir.exists():
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
+    logger.info("Serving frontend assets from %s", assets_dir)
+else:
+    logger.warning("Frontend assets directory not found at %s; assets mount skipped", assets_dir)
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_spa(full_path: str):
+    protected_prefixes = ("api", "static", "assets", "docs", "redoc", "openapi.json")
+    if any(full_path.startswith(prefix) for prefix in protected_prefixes):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    if frontend_index.exists():
+        return FileResponse(frontend_index)
+
+    logger.error(
+        "SPA fallback attempted but frontend build is missing | path=%s index=%s", full_path, frontend_index
+    )
+    raise HTTPException(status_code=503, detail="Frontend build not found; run npm run build")
 
 
 @app.get("/api/health", tags=["system"])

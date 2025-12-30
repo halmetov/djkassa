@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => {
   const PORT = Number(process.env.VITE_PORT || 8080);
 
     return {
+      appType: "spa",
       server: {
         host: HOST,         // фиксируем хост
         port: PORT,         // фиксируем порт

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -82,7 +83,10 @@ def run_migrations_on_startup(settings: Settings, *, raise_on_error: bool = True
             _generate_revision_if_needed(command, config, "Auto generated migration")
         else:
             LOGGER.info("Autogenerate disabled; applying existing migrations only.")
+        upgrade_start = time.perf_counter()
+        LOGGER.info("Alembic upgrade to head starting")
         command.upgrade(config, "head")
+        LOGGER.info("Alembic upgrade to head finished in %.2fs", time.perf_counter() - upgrade_start)
     except OperationalError as exc:
         LOGGER.error("Automatic migrations failed; database is not reachable", exc_info=True)
         if raise_on_error:

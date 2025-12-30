@@ -545,15 +545,14 @@ export default function POS() {
             return (
               <Card
                 key={product.id}
-                className="overflow-hidden cursor-pointer hover:border-primary transition"
-                onClick={() => addToCart(product)}
+                className="overflow-hidden hover:border-primary transition"
               >
                 <div className="relative bg-muted/40">
                   {product.image_url || product.photo ? (
                     <img
                       src={product.image_url || product.photo || ""}
                       alt={product.name}
-                      className="h-36 w-full object-cover"
+                      className="h-36 w-full object-contain object-center bg-white"
                     />
                   ) : (
                     <div className="h-36 w-full flex items-center justify-center text-muted-foreground text-sm">

@@ -55,6 +55,7 @@ export default function Products() {
   const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{ src: string; alt: string } | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -314,7 +315,6 @@ export default function Products() {
             <Input
               type="file"
               accept="image/*"
-              capture="environment"
               onChange={(e) => setNewPhotoFile(e.target.files?.[0] || null)}
             />
           </div>
@@ -384,7 +384,13 @@ export default function Products() {
                       <img
                         src={product.image_url || product.photo || ""}
                         alt={product.name}
-                        className="h-12 w-12 object-cover rounded"
+                        className="h-12 w-12 object-contain rounded bg-muted cursor-pointer"
+                        onClick={() =>
+                          setPreviewImage({
+                            src: product.image_url || product.photo || "",
+                            alt: product.name,
+                          })
+                        }
                       />
                     ) : (
                       <span className="text-muted-foreground text-sm">Нет фото</span>
@@ -421,6 +427,7 @@ export default function Products() {
           if (!open) {
             setEditingId(null);
             setEditPhotoFile(null);
+            setPreviewImage(null);
           }
         }}
       >
@@ -438,13 +445,18 @@ export default function Products() {
                         <img
                           src={selectedProduct.image_url || selectedProduct.photo || ""}
                           alt={selectedProduct.name}
-                          className="h-32 w-full object-cover rounded"
+                          className="h-32 w-full object-contain rounded bg-muted"
+                          onClick={() =>
+                            setPreviewImage({
+                              src: selectedProduct.image_url || selectedProduct.photo || "",
+                              alt: selectedProduct.name,
+                            })
+                          }
                         />
                       )}
                       <Input
                         type="file"
                         accept="image/*"
-                        capture="environment"
                         onChange={(e) => setEditPhotoFile(e.target.files?.[0] || null)}
                       />
                     </div>
@@ -452,7 +464,13 @@ export default function Products() {
                     <img
                       src={selectedProduct.image_url || selectedProduct.photo || ""}
                       alt={selectedProduct.name}
-                      className="h-32 w-full object-cover rounded"
+                      className="h-32 w-full object-contain rounded bg-muted"
+                      onClick={() =>
+                        setPreviewImage({
+                          src: selectedProduct.image_url || selectedProduct.photo || "",
+                          alt: selectedProduct.name,
+                        })
+                      }
                     />
                   ) : (
                     <div className="text-muted-foreground text-sm">Нет фото</div>
@@ -598,6 +616,23 @@ export default function Products() {
               Закрыть
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!previewImage} onOpenChange={(open) => !open && setPreviewImage(null)}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{previewImage?.alt || "Фото товара"}</DialogTitle>
+          </DialogHeader>
+          {previewImage && (
+            <div className="flex items-center justify-center">
+              <img
+                src={previewImage.src}
+                alt={previewImage.alt}
+                className="max-h-[70vh] w-full object-contain rounded bg-muted"
+              />
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

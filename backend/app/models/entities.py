@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional, TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text, text
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import MovementStatus
@@ -68,6 +68,7 @@ class Branch(Base, TimestampMixin):
 
 class Stock(Base, TimestampMixin):
     __tablename__ = "stock"
+    __table_args__ = (UniqueConstraint("branch_id", "product_id", name="uq_stock_branch_product"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"))

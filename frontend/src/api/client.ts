@@ -84,6 +84,18 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
   const origin = typeof window !== "undefined" ? window.location.origin : "ssr";
   const url = `${API_URL}${normalizedPath}`;
   let response: Response;
+  const headersForLog = Array.from(headers.entries()).filter(
+    ([key]) => key.toLowerCase() !== "authorization",
+  );
+  const requestLog = {
+    method,
+    url,
+    normalizedPath,
+    headers: headersForLog,
+    body: options.body,
+    origin,
+  };
+  console.debug("[api] request", requestLog);
   try {
     response = await fetch(url, {
       ...options,
