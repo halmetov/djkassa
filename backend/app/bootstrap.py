@@ -53,15 +53,6 @@ def check_database_connection() -> None:
 
 
 def apply_migrations(settings: Settings, *, timeout_seconds: float = 30.0) -> None:
-    env = (settings.environment or "").lower()
-    if env == "dev":
-        logger.info("Environment is 'dev'; skipping automatic migrations on startup. Run alembic upgrade head manually if needed.")
-        return
-
-    if not settings.auto_run_migrations:
-        logger.info("Automatic migrations disabled via configuration; skipping startup migrations")
-        return
-
     logger.info("Applying migrations on startup (upgrade head) in background thread")
     result: dict[str, object | None] = {"error": None, "traceback": None}
 

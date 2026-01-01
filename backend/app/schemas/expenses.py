@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator
 from pydantic.config import ConfigDict
 
 
@@ -41,3 +41,7 @@ class ExpenseOut(ExpenseBase):
     created_by_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("amount")
+    def serialize_amount(self, value: float | int) -> float:
+        return float(value)

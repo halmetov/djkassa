@@ -90,7 +90,14 @@ app = FastAPI(title="Kassa API", version="1.0.0", redirect_slashes=False, lifesp
 app.router.redirect_slashes = False
 
 cors_origins = set(settings.allowed_cors_origins)
-cors_origins.update({"http://localhost:8080", "http://127.0.0.1:8080"})
+cors_origins.update(
+    {
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    }
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -130,6 +137,20 @@ async def log_requests(request: Request, call_next):
         status_code,
         elapsed_ms,
     )
+    return response
+
+
+# Ensure cache headers are explicit so SPA shell stays fresh while assets can be cached
+@app.middleware("http")
+async def cache_control(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+
+    if request.method == "GET" and path.startswith("/assets/"):
+        response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+    elif request.method == "GET" and not path.startswith(("/api", "/static")):
+        response.headers["Cache-Control"] = "no-store"
+
     return response
 
 

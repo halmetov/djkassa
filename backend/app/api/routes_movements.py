@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,6 +22,7 @@ from app.schemas.movements import (
 from app.services.inventory import adjust_stock
 
 router = APIRouter(redirect_slashes=False)
+logger = logging.getLogger(__name__)
 
 def _status_from_db(value: str) -> MovementStatus:
     if value in MovementStatus._value2member_map_:
@@ -156,6 +158,13 @@ async def create_movement(
                     f"Доступно: {available_qty}, запрошено: {item.quantity}"
                 ),
             )
+
+    logger.info(
+        "Creating movement | from_branch_id=%s target_branch_id=%s user_id=%s",
+        payload.from_branch_id,
+        payload.to_branch_id,
+        current_user.id,
+    )
 
     movement = Movement(
         from_branch_id=payload.from_branch_id,
