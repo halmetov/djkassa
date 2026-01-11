@@ -5,7 +5,11 @@ from calendar import monthrange
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+<<<<<<< HEAD
 from app.auth.security import get_current_user, require_admin
+=======
+from app.auth.security import get_current_user
+>>>>>>> e4494f3fb22711ac05788128b3a97ef4ae0dbcb1
 from app.core.enums import UserRole
 from app.database.session import get_db
 from app.models.entities import (
@@ -47,7 +51,15 @@ def _resolve_report_scope(
         if seller_id is not None and seller_id != current_user.id:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         effective_seller_id = current_user.id
+<<<<<<< HEAD
         effective_branch_id = None
+=======
+
+        if branch_id is None:
+            effective_branch_id = current_user.branch_id
+        elif current_user.branch_id is not None and branch_id != current_user.branch_id:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+>>>>>>> e4494f3fb22711ac05788128b3a97ef4ae0dbcb1
 
     return effective_seller_id, effective_branch_id
 
@@ -78,8 +90,11 @@ async def get_summary(
     start_dt = datetime.combine(start_date, time.min)
     end_dt = datetime.combine(end_date, time.max)
 
+<<<<<<< HEAD
     if seller_id is None and user_id is not None:
         seller_id = user_id
+=======
+>>>>>>> e4494f3fb22711ac05788128b3a97ef4ae0dbcb1
     seller_id, branch_id = _resolve_report_scope(current_user, seller_id, branch_id)
 
     sale_filters = [Sale.created_at >= start_dt, Sale.created_at <= end_dt]
