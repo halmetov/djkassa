@@ -73,18 +73,10 @@ async def branch_stock(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    target_branch = branch_id
-    if current_user.role == "employee":
-        if current_user.branch_id is None:
-            raise HTTPException(status_code=400, detail="Сотрудник не привязан к филиалу")
-        if current_user.branch_id != branch_id:
-            raise HTTPException(status_code=403, detail="Нет доступа к складу филиала")
-        target_branch = current_user.branch_id
-
     result = db.execute(
         select(Stock, Product)
         .join(Product, Stock.product_id == Product.id)
-        .where(Stock.branch_id == target_branch)
+        .where(Stock.branch_id == branch_id)
     )
     response = []
     for stock, product in result.all():

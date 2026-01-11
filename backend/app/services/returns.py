@@ -36,6 +36,18 @@ def calculate_return_breakdowns(returns: Iterable[Return]) -> dict[int, ReturnBr
 
         for entry in sorted(sale_returns, key=lambda r: r.created_at):
             total_amount = float(sum(item.amount for item in entry.items) or 0)
+            debt_offset = float(entry.debt_offset_amount or 0)
+            if debt_offset > 0:
+                debt_used = min(debt_offset, total_amount)
+                cash_used = max(total_amount - debt_used, 0)
+                breakdowns[entry.id] = ReturnBreakdown(
+                    total=total_amount,
+                    cash=cash_used,
+                    card=0,
+                    debt=debt_used,
+                )
+                continue
+
             remaining = total_amount
 
             debt_used = min(remaining, debt_pool)

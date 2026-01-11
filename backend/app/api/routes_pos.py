@@ -57,6 +57,7 @@ async def search_products_for_pos(
                 name=product.name,
                 barcode=product.barcode,
                 sale_price=product.sale_price,
+                red_price=float(product.red_price) if product.red_price is not None else None,
                 unit=product.unit,
                 branch_id=branch.id if branch else None,
                 branch_name=branch.name if branch else None,

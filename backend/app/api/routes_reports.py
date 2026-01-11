@@ -1,12 +1,26 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from datetime import date, datetime, time, timedelta
+from calendar import monthrange
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.auth.security import require_admin
+from app.auth.security import get_current_user, require_admin
+from app.core.enums import UserRole
 from app.database.session import get_db
-from app.models.entities import Branch, Client, Debt, DebtPayment, Product, Return, Sale, SaleItem, User
+from app.models.entities import (
+    Branch,
+    Client,
+    Debt,
+    DebtPayment,
+    Expense,
+    Product,
+    Return,
+    ReturnItem,
+    Sale,
+    SaleItem,
+    User,
+)
 from app.schemas import reports as report_schema
 from app.services.returns import calculate_return_breakdowns
 
@@ -21,17 +35,39 @@ def _apply_date_filters(query, start_date: date | None, end_date: date | None, c
     return query
 
 
+def _resolve_report_scope(
+    current_user: User, seller_id: int | None, branch_id: int | None
+) -> tuple[int | None, int | None]:
+    role_value = current_user.role.value if isinstance(current_user.role, UserRole) else current_user.role
+    is_admin = role_value == UserRole.ADMIN.value
+    effective_branch_id = branch_id
+    effective_seller_id = seller_id
+
+    if not is_admin:
+        if seller_id is not None and seller_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        effective_seller_id = current_user.id
+        effective_branch_id = None
+
+    return effective_seller_id, effective_branch_id
+
+
 @router.get(
     "/summary",
     response_model=report_schema.SummaryResponse,
-    dependencies=[Depends(require_admin)],
+    description=(
+        "Admins see all data. Employees are limited to their own sales: "
+        "if no seller_id is provided, the current user is applied automatically."
+    ),
 )
 async def get_summary(
     start_date: date | None = None,
     end_date: date | None = None,
     branch_id: int | None = None,
     seller_id: int | None = None,
+    user_id: int | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     if start_date and not end_date:
         end_date = start_date
@@ -41,6 +77,10 @@ async def get_summary(
     end_date = end_date or start_date
     start_dt = datetime.combine(start_date, time.min)
     end_dt = datetime.combine(end_date, time.max)
+
+    if seller_id is None and user_id is not None:
+        seller_id = user_id
+    seller_id, branch_id = _resolve_report_scope(current_user, seller_id, branch_id)
 
     sale_filters = [Sale.created_at >= start_dt, Sale.created_at <= end_dt]
     if branch_id:
@@ -95,11 +135,17 @@ async def get_summary(
             ),
             func.coalesce(
                 func.sum(
-                    case((DebtPayment.payment_type != "cash", DebtPayment.amount), else_=0)
+                    case(
+                        (DebtPayment.payment_type.notin_(["cash", "offset"]), DebtPayment.amount),
+                        else_=0,
+                    )
                 ),
                 0,
             ),
-            func.coalesce(func.sum(DebtPayment.amount), 0),
+            func.coalesce(
+                func.sum(case((DebtPayment.payment_type != "offset", DebtPayment.amount), else_=0)),
+                0,
+            ),
         ).where(*debt_filters)
     ).one()
 
@@ -127,11 +173,18 @@ async def get_summary(
 
     grand_total = cash_sales_net + card_sales_net + debts_created_amount + debt_payments_amount - float(refunds_debt)
 
+    returns_total = -float(refunds_total or 0)
+    cashbox_total = float(cash_total or 0) + float(card_total or 0) + debt_payments_amount + returns_total
+
     return report_schema.SummaryResponse(
         start_date=start_date,
         end_date=end_date,
-        cash_total=cash_total_value,
-        card_total=card_total_value,
+        cash_total=float(cash_total or 0),
+        card_total=float(card_total or 0),
+        debt_payments_total=debt_payments_amount,
+        returns_total=returns_total,
+        new_debts_total=debts_created_amount,
+        cashbox_total=cashbox_total,
         debts_created_amount=debts_created_amount,
         debt_payments_amount=debt_payments_amount,
         refunds_total=float(refunds_total or 0),
@@ -142,9 +195,97 @@ async def get_summary(
 
 
 @router.get(
+    "/profit",
+    response_model=report_schema.ProfitReportResponse,
+    dependencies=[Depends(require_admin)],
+)
+async def get_profit_report(
+    month: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        period_start = datetime.strptime(month, "%Y-%m").date()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid month format. Use YYYY-MM.") from exc
+
+    _, last_day = monthrange(period_start.year, period_start.month)
+    period_end = date(period_start.year, period_start.month, last_day)
+    start_dt = datetime.combine(period_start, time.min)
+    end_dt = datetime.combine(period_end, time.max)
+
+    sales_total = db.execute(
+        select(func.coalesce(func.sum(Sale.total_amount), 0)).where(
+            Sale.created_at >= start_dt,
+            Sale.created_at <= end_dt,
+        )
+    ).scalar_one()
+
+    return_entries = db.execute(
+        select(Return)
+        .options(selectinload(Return.items), joinedload(Return.sale))
+        .where(Return.created_at >= start_dt, Return.created_at <= end_dt)
+    ).scalars().unique().all()
+    return_breakdowns = calculate_return_breakdowns(return_entries)
+    refunds_total = sum(b.total for b in return_breakdowns.values())
+
+    sales_total_value = float(sales_total or 0) - float(refunds_total or 0)
+
+    sales_cogs = db.execute(
+        select(
+            func.coalesce(
+                func.sum(
+                    SaleItem.quantity * func.coalesce(Product.purchase_price, 0)
+                ),
+                0,
+            )
+        )
+        .join(Sale, SaleItem.sale_id == Sale.id)
+        .join(Product, SaleItem.product_id == Product.id)
+        .where(Sale.created_at >= start_dt, Sale.created_at <= end_dt)
+    ).scalar_one()
+
+    returns_cogs = db.execute(
+        select(
+            func.coalesce(
+                func.sum(
+                    ReturnItem.quantity * func.coalesce(Product.purchase_price, 0)
+                ),
+                0,
+            )
+        )
+        .join(Return, ReturnItem.return_id == Return.id)
+        .join(SaleItem, ReturnItem.sale_item_id == SaleItem.id)
+        .join(Product, SaleItem.product_id == Product.id)
+        .where(Return.created_at >= start_dt, Return.created_at <= end_dt)
+    ).scalar_one()
+
+    cogs_total = float(sales_cogs or 0) - float(returns_cogs or 0)
+
+    expenses_total = db.execute(
+        select(func.coalesce(func.sum(Expense.amount), 0)).where(
+            Expense.created_at >= start_dt,
+            Expense.created_at <= end_dt,
+        )
+    ).scalar_one()
+
+    profit_total = sales_total_value - cogs_total - float(expenses_total or 0)
+
+    return report_schema.ProfitReportResponse(
+        month=month,
+        sales_total=sales_total_value,
+        cogs_total=cogs_total,
+        expenses_total=float(expenses_total or 0),
+        profit=profit_total,
+    )
+
+
+@router.get(
     "/summary/operations",
     response_model=report_schema.ReportsResponse,
-    dependencies=[Depends(require_admin)],
+    description=(
+        "Admins can see all operations. Employees are limited to their own entries; "
+        "when no seller_id is provided, the current user is enforced."
+    ),
 )
 async def get_operations_summary(
     start_date: date | None = None,
@@ -152,7 +293,10 @@ async def get_operations_summary(
     branch_id: int | None = None,
     seller_id: int | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    seller_id, branch_id = _resolve_report_scope(current_user, seller_id, branch_id)
+
     branch_clause_sale = Sale.branch_id == branch_id if branch_id else None
 
     base_query = select(Sale, User.name, Branch.name).join(User).join(Branch)
@@ -231,6 +375,7 @@ async def get_operations_summary(
     debt_query = _apply_date_filters(debt_query, start_date, end_date, DebtPayment.created_at)
     for row in db.execute(debt_query):
         amount = float(row[3] or 0)
+        is_offset = row[2] == "offset"
         operations.append(
             report_schema.SaleSummary(
                 id=row[0],
@@ -241,7 +386,7 @@ async def get_operations_summary(
                 total_amount=amount,
                 payment_type=row[2],
                 paid_cash=amount if row[2] == "cash" else 0,
-                paid_card=amount if row[2] != "cash" else 0,
+                paid_card=0 if is_offset else (amount if row[2] != "cash" else 0),
                 paid_debt=0,
             )
         )
@@ -257,13 +402,15 @@ async def get_operations_summary(
         if op_date not in by_day_map:
             by_day_map[op_date] = report_schema.DailyReport(day=op_date, total_sales=0, total_credit=0)
         by_day = by_day_map[op_date]
-        by_day.total_sales += op.total_amount
-        by_day.total_credit += op.paid_debt
+        if not (op.entry_type == "debt_payment" and op.payment_type == "offset"):
+            by_day.total_sales += op.total_amount
+            by_day.total_credit += op.paid_debt
 
-        if op.seller:
-            by_seller_map[op.seller] = by_seller_map.get(op.seller, 0) + op.total_amount
-        if op.branch:
-            by_branch_map[op.branch] = by_branch_map.get(op.branch, 0) + op.total_amount
+        if not (op.entry_type == "debt_payment" and op.payment_type == "offset"):
+            if op.seller:
+                by_seller_map[op.seller] = by_seller_map.get(op.seller, 0) + op.total_amount
+            if op.branch:
+                by_branch_map[op.branch] = by_branch_map.get(op.branch, 0) + op.total_amount
 
     by_day = list(by_day_map.values())
     by_day.sort(key=lambda entry: entry.day)
@@ -276,7 +423,10 @@ async def get_operations_summary(
 @router.get(
     "/analytics",
     response_model=report_schema.AnalyticsResponse,
-    dependencies=[Depends(require_admin)],
+    description=(
+        "Admins can access all analytics. Employees are restricted to their own sales; "
+        "seller_id defaults to the current user for non-admins."
+    ),
 )
 async def get_analytics(
     start_date: date | None = None,
@@ -284,7 +434,10 @@ async def get_analytics(
     branch_id: int | None = None,
     seller_id: int | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    seller_id, branch_id = _resolve_report_scope(current_user, seller_id, branch_id)
+
     if not start_date or not end_date:
         end_date = end_date or date.today()
         start_date = start_date or (end_date - timedelta(days=30))
@@ -351,7 +504,10 @@ async def get_analytics(
             ),
             func.coalesce(
                 func.sum(
-                    case((DebtPayment.payment_type != "cash", DebtPayment.amount), else_=0)
+                    case(
+                        (DebtPayment.payment_type.notin_(["cash", "offset"]), DebtPayment.amount),
+                        else_=0,
+                    )
                 ),
                 0,
             ),
@@ -400,7 +556,9 @@ async def get_analytics(
     debt_by_day_rows = db.execute(
         select(
             func.date(DebtPayment.created_at),
-            func.sum(DebtPayment.amount),
+            func.sum(
+                case((DebtPayment.payment_type != "offset", DebtPayment.amount), else_=0)
+            ),
         )
         .where(*debt_filters)
         .group_by(func.date(DebtPayment.created_at))

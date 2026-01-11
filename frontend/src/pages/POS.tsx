@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Search, ShoppingCart, Trash2, Plus, Minus, HandCoins, Package } from "lucide-react";
+import { Search, ShoppingCart, Trash2, Plus, Minus, HandCoins, Package, Tag } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -34,6 +35,7 @@ interface Product {
   id: number;
   name: string;
   sale_price: number;
+  red_price?: number | null;
   barcode?: string | null;
   unit?: string;
   image_url?: string | null;
@@ -89,6 +91,10 @@ export default function POS() {
   const MIN_QUANTITY = 1;
   const isMobile = useIsMobile();
   const cartBadgeCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
+  const productCount = useMemo(
+    () => ((searchQuery || selectedCategory) ? filteredProducts.length : products.length),
+    [filteredProducts, products, searchQuery, selectedCategory],
+  );
 
   const normalizeRating = useCallback((value?: number | null) => value ?? 0, []);
 
@@ -173,7 +179,7 @@ export default function POS() {
           const available_qty = matched?.available_qty ?? item.available_qty;
           const parsedInput = parseQuantityInput(item.quantityInput ?? item.quantity);
           const numeric = parsedInput ?? item.quantity ?? MIN_QUANTITY;
-          const safeQty = Math.max(MIN_QUANTITY, Math.min(numeric, available_qty));
+          const safeQty = Math.max(MIN_QUANTITY, numeric);
           return {
             ...item,
             available_qty,
@@ -244,24 +250,16 @@ export default function POS() {
   };
 
   const addToCart = (product: Product) => {
-    if (product.available_qty <= 0) {
-      toast.error("Товар недоступен на складе магазина");
-      return;
-    }
     const existingItem = cart.find((item) => item.product_id === product.id);
     if (existingItem) {
-      if (existingItem.quantity + 1 > product.available_qty) {
-        toast.error(`Не хватает. Доступно: ${product.available_qty}`);
-        return;
-      }
       setCart(
         cart.map((item) =>
           item.product_id === product.id
             ? {
                 ...item,
-                quantity: Math.min(item.quantity + 1, product.available_qty),
-                quantityInput: formatQuantityInput(Math.min(item.quantity + 1, product.available_qty)),
-                total: Math.min(item.quantity + 1, product.available_qty) * item.price,
+                quantity: item.quantity + 1,
+                quantityInput: formatQuantityInput(item.quantity + 1),
+                total: (item.quantity + 1) * item.price,
               }
             : item,
         ),
@@ -287,11 +285,7 @@ export default function POS() {
       cart.map((item) => {
         if (item.product_id === product_id) {
           const desired = item.quantity + delta;
-          const normalized = Math.max(MIN_QUANTITY, desired);
-          const newQty = Math.min(normalized, item.available_qty);
-          if (normalized > item.available_qty) {
-            toast.error(`Не хватает. Доступно: ${item.available_qty}`);
-          }
+          const newQty = Math.max(MIN_QUANTITY, desired);
           return {
             ...item,
             quantity: newQty,
@@ -310,7 +304,7 @@ export default function POS() {
         if (item.product_id !== product_id) return item;
         const sanitized = raw.replace(/[^0-9]/g, "");
         const parsed = sanitized === "" ? null : parseInt(sanitized, 10);
-        const safeQty = parsed === null ? 0 : Math.min(parsed, item.available_qty);
+        const safeQty = parsed === null ? 0 : Math.max(parsed, MIN_QUANTITY);
         return {
           ...item,
           quantity: safeQty,
@@ -326,8 +320,7 @@ export default function POS() {
       prev.map((item) => {
         if (item.product_id !== product_id) return item;
         const parsed = parseQuantityInput(item.quantityInput ?? item.quantity);
-        const normalized = parsed === null || parsed < MIN_QUANTITY ? MIN_QUANTITY : parsed;
-        const clamped = Math.min(normalized, item.available_qty);
+        const clamped = parsed === null || parsed < MIN_QUANTITY ? MIN_QUANTITY : parsed;
         return {
           ...item,
           quantity: clamped,
@@ -372,7 +365,6 @@ export default function POS() {
   };
 
   const getTotalAmount = () => cart.reduce((sum, item) => sum + item.total, 0);
-  const hasInsufficient = useMemo(() => cart.some((item) => item.quantity > item.available_qty), [cart]);
 
   const handlePayment = async () => {
     if (!user) {
@@ -399,12 +391,6 @@ export default function POS() {
     if (credit > 0 && !selectedClient) {
       toast.error("Для продажи в долг выберите клиента");
       return;
-    }
-    for (const item of cart) {
-      if (item.quantity > item.available_qty) {
-        toast.error(`Не хватает. Доступно: ${item.available_qty}`);
-        return;
-      }
     }
     try {
       let paymentType = "cash";
@@ -507,7 +493,7 @@ export default function POS() {
   return (
     <div className="h-full flex flex-col lg:flex-row gap-4 pb-20 lg:pb-0">
       <div className={cn("flex-1 space-y-4", isMobile && activeTab !== "products" ? "hidden" : "") }>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -516,6 +502,9 @@ export default function POS() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
             />
+          </div>
+          <div className="text-sm text-muted-foreground whitespace-nowrap">
+            Товаров: {productCount}
           </div>
         </div>
 
@@ -545,15 +534,14 @@ export default function POS() {
             return (
               <Card
                 key={product.id}
-                className="overflow-hidden cursor-pointer hover:border-primary transition"
-                onClick={() => addToCart(product)}
+                className="overflow-hidden hover:border-primary transition"
               >
                 <div className="relative bg-muted/40">
                   {product.image_url || product.photo ? (
                     <img
                       src={product.image_url || product.photo || ""}
                       alt={product.name}
-                      className="h-36 w-full object-cover"
+                      className="h-36 w-full object-contain object-center bg-white"
                     />
                   ) : (
                     <div className="h-36 w-full flex items-center justify-center text-muted-foreground text-sm">
@@ -565,11 +553,32 @@ export default function POS() {
                     {product.available_qty}
                   </div>
 
-                  {product.barcode && (
-                    <div className="absolute top-2 right-2 rounded bg-background/90 px-2 py-1 text-[10px] text-muted-foreground shadow">
-                      {product.barcode}
-                    </div>
-                  )}
+                  <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
+                    {product.barcode && (
+                      <div className="rounded bg-background/90 px-2 py-1 text-[10px] text-muted-foreground shadow">
+                        {product.barcode}
+                      </div>
+                    )}
+                    {product.red_price !== null && product.red_price !== undefined && (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="icon"
+                            className="h-7 w-7 rounded-full shadow"
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label="Показать красную цену"
+                          >
+                            <Tag className="h-3.5 w-3.5" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent side="left" align="start" className="w-auto text-sm">
+                          Красная цена: {product.red_price.toFixed(2)} ₸
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                  </div>
                 </div>
 
                 <div className="p-3 flex items-end gap-3">
@@ -638,7 +647,7 @@ export default function POS() {
 
       <Card
         className={cn(
-          "w-full lg:w-96 p-4 flex flex-col",
+          "w-full lg:w-96 p-4 flex flex-col lg:sticky lg:top-[calc(var(--navbar-height)+1.5rem)] lg:max-h-[calc(100vh-var(--navbar-height)-3rem)] lg:self-start",
           isMobile && activeTab !== "cart" ? "hidden" : "",
         )}
       >
@@ -683,12 +692,7 @@ export default function POS() {
                     onChange={(e) => handleManualQuantityChange(item.product_id, e.target.value)}
                     onFocus={() => handleQuantityFocus(item.product_id)}
                     onBlur={() => handleQuantityBlur(item.product_id)}
-                    className={cn(
-                      "w-16 text-center",
-                      item.quantity > item.available_qty
-                        ? "border-destructive focus-visible:ring-destructive"
-                        : undefined,
-                    )}
+                    className="w-16 text-center"
                   />
                   <Button
                     size="icon"
@@ -699,9 +703,6 @@ export default function POS() {
                   </Button>
                 </div>
                 <div className="text-xs text-muted-foreground">Доступно: {item.available_qty}</div>
-                {item.quantity > item.available_qty && (
-                  <div className="text-xs text-destructive font-medium">Не хватает на складе магазина</div>
-                )}
 
                 <div className="flex gap-2">
                   <Input
@@ -723,15 +724,11 @@ export default function POS() {
             <span>Итого:</span>
             <span>{getTotalAmount().toFixed(2)} ₸</span>
           </div>
-          {hasInsufficient && (
-            <div className="text-sm text-destructive">Количество превышает остаток. Обновите позиции.</div>
-          )}
-
           <Button
             className="w-full"
             size="lg"
             onClick={() => setShowPaymentModal(true)}
-            disabled={cart.length === 0 || hasInsufficient}
+            disabled={cart.length === 0}
           >
             Оплата
           </Button>
@@ -847,7 +844,7 @@ export default function POS() {
             <Button variant="outline" onClick={() => setShowPaymentModal(false)}>
               Отмена
             </Button>
-            <Button onClick={handlePayment} disabled={hasInsufficient}>
+            <Button onClick={handlePayment}>
               Подтвердить
             </Button>
           </DialogFooter>

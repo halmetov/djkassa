@@ -28,7 +28,7 @@ type Employee = {
   id: number;
   name: string;
   login: string;
-  role: "admin" | "employee";
+  role: "admin" | "employee" | "manager";
   active: boolean;
   branch_id: number | null;
 };
@@ -47,13 +47,13 @@ export default function Employees() {
     name: "",
     login: "",
     password: "",
-    role: "employee",
+    role: "employee" as Employee["role"],
     active: true,
     branch_id: null as number | null,
   });
   const [editData, setEditData] = useState({
     name: "",
-    role: "employee",
+    role: "employee" as Employee["role"],
     active: true,
     password: "",
     branch_id: null as number | null,
@@ -205,6 +205,7 @@ export default function Employees() {
               <SelectContent>
                 <SelectItem value="admin">Администратор</SelectItem>
                 <SelectItem value="employee">Продавец</SelectItem>
+                <SelectItem value="manager">Менеджер</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -279,10 +280,15 @@ export default function Employees() {
                       <SelectContent>
                         <SelectItem value="admin">Администратор</SelectItem>
                         <SelectItem value="employee">Продавец</SelectItem>
+                        <SelectItem value="manager">Менеджер</SelectItem>
                       </SelectContent>
                     </Select>
                   ) : (
-                    employee.role === "admin" ? "Администратор" : "Продавец"
+                    employee.role === "admin"
+                      ? "Администратор"
+                      : employee.role === "manager"
+                        ? "Менеджер"
+                        : "Продавец"
                   )}
                   </TableCell>
                   <TableCell>

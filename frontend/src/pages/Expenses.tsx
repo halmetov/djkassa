@@ -30,17 +30,28 @@ export default function Expenses() {
 
   const isFormValid = useMemo(() => formData.title.trim() !== "", [formData.title]);
 
+  const formatErrorMessage = (error: any, fallback: string) => {
+    if (!error) return fallback;
+    const bodyDetail = typeof error?.body === "object" ? error.body?.detail : undefined;
+    if (bodyDetail) {
+      return `${fallback}: ${bodyDetail}`;
+    }
+    return error?.message || fallback;
+  };
+
   const fetchExpenses = useCallback(async () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
       if (dateRange.start) params.append("start_date", dateRange.start);
       if (dateRange.end) params.append("end_date", dateRange.end);
-      const data = await apiGet<Expense[]>(`/api/expenses?${params.toString()}`);
+      const query = params.toString();
+      const path = query ? `/api/expenses?${query}` : "/api/expenses";
+      const data = await apiGet<Expense[]>(path);
       setExpenses(data.map((item) => ({ ...item, amount: item.amount ?? 0 })));
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.message || "Не удалось загрузить расходы");
+      toast.error(formatErrorMessage(error, "Не удалось загрузить расходы"));
     } finally {
       setIsLoading(false);
     }
@@ -59,7 +70,7 @@ export default function Expenses() {
     const amountValue = Math.max(0, parseFloat(formData.amount) || 0);
     setIsSubmitting(true);
     try {
-      await apiPost("/api/expenses", {
+      await apiPost<Expense>("/api/expenses", {
         title: formData.title.trim(),
         amount: amountValue,
       });
@@ -68,7 +79,7 @@ export default function Expenses() {
       fetchExpenses();
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.message || "Не удалось сохранить расход");
+      toast.error(formatErrorMessage(error, "Не удалось сохранить расход"));
     } finally {
       setIsSubmitting(false);
     }

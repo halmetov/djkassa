@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.models.entities import Stock
 
 
-def adjust_stock(db: Session, branch_id: int, product_id: int, delta: int) -> Stock:
+def adjust_stock(db: Session, branch_id: int, product_id: int, delta: int, allow_negative: bool = False) -> Stock:
     result = db.execute(
         select(Stock).where(Stock.branch_id == branch_id, Stock.product_id == product_id)
     )
@@ -13,7 +13,7 @@ def adjust_stock(db: Session, branch_id: int, product_id: int, delta: int) -> St
         stock = Stock(branch_id=branch_id, product_id=product_id, quantity=0)
         db.add(stock)
     stock.quantity += delta
-    if stock.quantity < 0:
+    if not allow_negative and stock.quantity < 0:
         stock.quantity = 0
     db.flush()
     return stock

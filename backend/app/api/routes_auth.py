@@ -59,17 +59,30 @@ async def login(request: Request, db: Session = Depends(get_db)):
         refresh_token = create_refresh_token(token_payload)
         return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
     except HTTPException as exc:
+        error_code = "LOGIN_HTTP_ERROR" if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR else "LOGIN_AUTH_FAILED"
         if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
-            logger.exception("HTTPException during login for user %s", login_value)
+            logger.exception("HTTPException during login for user %s", login_value, extra={"error_code": error_code})
         else:
-            logger.info("Authentication failed for user %s: %s", login_value, exc.detail)
-        raise
+            logger.info(
+                "Authentication failed for user %s: %s",
+                login_value,
+                exc.detail,
+                extra={"error_code": error_code},
+            )
+        raise HTTPException(status_code=exc.status_code, detail={"error_code": error_code, "detail": exc.detail})
     except SQLAlchemyError as exc:
-        logger.exception("Database error during login for user %s", login_value)
-        raise HTTPException(status_code=500, detail="Ошибка базы данных при входе") from exc
+        error_code = "LOGIN_DB_ERROR"
+        logger.exception("Database error during login for user %s", login_value, extra={"error_code": error_code})
+        raise HTTPException(
+            status_code=500,
+            detail={"error_code": error_code, "detail": "Ошибка базы данных при входе"},
+        ) from exc
     except Exception as exc:  # pragma: no cover - defensive logging for unexpected errors
-        logger.exception("Unexpected error during login for user %s", login_value)
-        raise HTTPException(status_code=500, detail="Ошибка аутентификации") from exc
+        error_code = "LOGIN_UNEXPECTED_ERROR"
+        logger.exception("Unexpected error during login for user %s", login_value, extra={"error_code": error_code})
+        raise HTTPException(
+            status_code=500, detail={"error_code": error_code, "detail": "Ошибка аутентификации"}
+        ) from exc
 
 
 @router.get("/me", response_model=auth_schema.AuthUser)

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-
-from datetime import date, datetime, time
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
@@ -10,7 +9,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth.security import get_current_user
 from app.database.session import get_db
-from app.models.entities import Product, Return, ReturnItem, Sale, SaleItem
+from app.models.entities import Client, Debt, DebtPayment, Product, Return, ReturnItem, Sale, SaleItem
 from app.models.user import User
 from app.schemas import returns as return_schema
 from app.services.inventory import adjust_stock
@@ -30,9 +29,7 @@ def _apply_date_filters(
 
 def _enforce_scope(query, current_user: User):
     if current_user.role == "employee":
-        if current_user.branch_id is None:
-            raise HTTPException(status_code=400, detail="Сотрудник не привязан к филиалу")
-        query = query.where(Return.branch_id == current_user.branch_id)
+        query = query.where(Return.created_by_id == current_user.id)
     return query
 
 
@@ -45,11 +42,6 @@ def _get_sale_for_return(db: Session, sale_id: int, current_user: User) -> Sale:
     ).scalar_one_or_none()
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
-    if current_user.role == "employee":
-        if current_user.branch_id is None:
-            raise HTTPException(status_code=400, detail="Сотрудник не привязан к филиалу")
-        if sale.branch_id != current_user.branch_id:
-            raise HTTPException(status_code=403, detail="Нет доступа к этому чеку")
     return sale
 
 
@@ -132,10 +124,65 @@ async def create_return(
             total_amount += item.amount
             db.add(item)
 
-        if sale.client_id and sale.paid_debt > 0:
-            client = sale.client
-            if client:
-                client.total_debt = max(client.total_debt - total_amount, 0)
+        if payload.apply_to_debt:
+            if not sale.client_id:
+                raise HTTPException(status_code=400, detail="У чека нет клиента для погашения долга")
+            client = sale.client or db.get(Client, sale.client_id)
+            if not client:
+                raise HTTPException(status_code=404, detail="Клиент не найден")
+
+            outstanding = Decimal(str(client.total_debt or 0)).quantize(Decimal("0.01"))
+            return_total = Decimal(str(total_amount)).quantize(Decimal("0.01"))
+            max_offset = min(outstanding, return_total)
+            if max_offset <= 0:
+                raise HTTPException(status_code=400, detail="У клиента нет долга для зачета")
+
+            if payload.debt_offset_amount is None:
+                offset_amount = max_offset
+            else:
+                offset_amount = Decimal(str(payload.debt_offset_amount)).quantize(Decimal("0.01"))
+                if offset_amount < 0:
+                    raise HTTPException(status_code=400, detail="Сумма зачета должна быть больше или равна 0")
+
+            if offset_amount > max_offset:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Сумма зачета не может превышать сумму возврата или долг клиента",
+                )
+
+            return_entry.apply_to_debt = True
+            return_entry.debt_offset_amount = offset_amount
+            if offset_amount > 0:
+                remaining = offset_amount
+                debts = (
+                    db.execute(
+                        select(Debt)
+                        .where(Debt.client_id == client.id, Debt.amount > Debt.paid)
+                        .order_by(Debt.created_at)
+                    )
+                    .scalars()
+                    .all()
+                )
+                for debt in debts:
+                    debt_remaining = Decimal(str(debt.amount)) - Decimal(str(debt.paid or 0))
+                    if debt_remaining <= 0:
+                        continue
+                    portion = min(remaining, debt_remaining)
+                    debt.paid = float(Decimal(str(debt.paid or 0)) + portion)
+                    remaining -= portion
+                    if remaining <= 0:
+                        break
+
+                client.total_debt = float(max(outstanding - offset_amount, Decimal("0")))
+                debt_payment = DebtPayment(
+                    client_id=client.id,
+                    amount=offset_amount,
+                    payment_type="offset",
+                    processed_by_id=current_user.id,
+                    created_by_id=current_user.id,
+                    branch_id=sale.branch_id,
+                )
+                db.add(debt_payment)
 
         db.commit()
     except HTTPException:
@@ -220,7 +267,7 @@ async def get_return_detail(
     ).scalars().unique().one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Возврат не найден")
-    if current_user.role == "employee" and current_user.branch_id != entry.branch_id:
+    if current_user.role == "employee" and entry.created_by_id != current_user.id:
         raise HTTPException(status_code=403, detail="Нет доступа к возврату")
 
     items: list[return_schema.ReturnItem] = []

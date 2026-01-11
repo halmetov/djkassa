@@ -7,6 +7,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { toast } from "sonner";
 import { getCurrentUser, login } from "@/lib/auth";
 
+const resolveHomePath = (role?: string | null) => {
+  if (role === "production_manager" || role === "manager") return "/workshop/orders";
+  if (role === "employee") return "/pos";
+  return "/";
+};
+
 export default function Auth() {
   const [loginValue, setLoginValue] = useState("");
   const [password, setPassword] = useState("");
@@ -18,7 +24,7 @@ export default function Auth() {
       try {
         const user = await getCurrentUser();
         if (user) {
-          navigate('/');
+          navigate(resolveHomePath(user.role));
         }
       } catch (error) {
         console.error("Failed to fetch current user before login", error);
@@ -32,9 +38,9 @@ export default function Auth() {
     setLoading(true);
 
     try {
-      await login(loginValue, password);
+      const user = await login(loginValue, password);
       toast.success("Вход выполнен успешно");
-      navigate('/');
+      navigate(resolveHomePath(user?.role));
     } catch (error: any) {
       toast.error(error.message || "Ошибка аутентификации");
     } finally {

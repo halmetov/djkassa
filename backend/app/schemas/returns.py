@@ -13,6 +13,8 @@ class ReturnCreate(BaseModel):
     type: str
     items: list[ReturnItemInput] = []
     reason: str | None = None
+    apply_to_debt: bool = False
+    debt_offset_amount: float | None = None
 
 
 class ReturnItem(BaseModel):

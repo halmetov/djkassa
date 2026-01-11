@@ -16,9 +16,17 @@ import Warehouse from "./pages/Warehouse";
 import Reports from "./pages/Reports";
 import Returns from "./pages/Returns";
 import Analysis from "./pages/Analysis";
+import ProfitReport from "./pages/ProfitReport";
 import NotFound from "./pages/NotFound";
 import Movements from "./pages/Movements";
 import Expenses from "./pages/Expenses";
+import WorkshopOrders from "./pages/WorkshopOrders";
+import WorkshopOrderDetail from "./pages/WorkshopOrderDetail";
+import WorkshopEmployees from "./pages/WorkshopEmployees";
+import WorkshopStock from "./pages/WorkshopStock";
+import WorkshopIncome from "./pages/WorkshopIncome";
+import WorkshopExpenses from "./pages/WorkshopExpenses";
+import WorkshopReport from "./pages/WorkshopReport";
 
 const queryClient = new QueryClient();
 
@@ -36,9 +44,17 @@ const App = () => (
             <Route path="/warehouse" element={<Warehouse />} />
             <Route path="/pos" element={<POS />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/reports/profit" element={<ProfitReport />} />
             <Route path="/returns" element={<Returns />} />
             <Route path="/movements" element={<Movements />} />
             <Route path="/expenses" element={<Expenses />} />
+            <Route path="/workshop/orders" element={<WorkshopOrders />} />
+            <Route path="/workshop/orders/:id" element={<WorkshopOrderDetail />} />
+            <Route path="/workshop/expenses" element={<WorkshopExpenses />} />
+            <Route path="/workshop/stock" element={<WorkshopStock />} />
+            <Route path="/workshop/income" element={<WorkshopIncome />} />
+            <Route path="/workshop/employees" element={<WorkshopEmployees />} />
+            <Route path="/workshop/report" element={<WorkshopReport />} />
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/categories" element={<Categories />} />
             <Route path="/products" element={<Products />} />

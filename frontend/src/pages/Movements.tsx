@@ -89,11 +89,17 @@ export default function Movements() {
         const activeBranches = branchesData.filter((b) => b.active);
         setBranches(activeBranches);
         if (activeBranches.length > 0) {
-          setFromBranch(String(activeBranches[0].id));
-          const second = activeBranches.find((b) => b.id !== activeBranches[0].id);
-          if (second) {
-            setToBranch(String(second.id));
+          if (current?.role === "employee") {
+            setFromBranch("");
+            setToBranch("");
+          } else {
+            setFromBranch(String(activeBranches[0].id));
+            const second = activeBranches.find((b) => b.id !== activeBranches[0].id);
+            setToBranch(second ? String(second.id) : "");
           }
+        } else {
+          setFromBranch("");
+          setToBranch("");
         }
       } catch (error) {
         console.error(error);
@@ -106,6 +112,8 @@ export default function Movements() {
   useEffect(() => {
     if (fromBranch) {
       loadStock();
+    } else {
+      setStock([]);
     }
   }, [fromBranch]);
 
@@ -113,6 +121,17 @@ export default function Movements() {
     loadIncoming();
     loadHistory();
   }, [user, historyStatus]);
+
+  useEffect(() => {
+    if (!fromBranch) {
+      setToBranch("");
+      return;
+    }
+    if (toBranch && toBranch === fromBranch) {
+      const next = branches.find((b) => String(b.id) !== fromBranch);
+      setToBranch(next ? String(next.id) : "");
+    }
+  }, [fromBranch, toBranch, branches]);
 
   const loadStock = async () => {
     try {
@@ -298,7 +317,6 @@ export default function Movements() {
                 setFromBranch(v);
                 setItems([]);
               }}
-              disabled={user?.role === "employee"}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Выберите филиал" />

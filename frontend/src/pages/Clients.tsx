@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useOutletContext } from "react-router-dom";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,10 @@ export default function Clients() {
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editDebt, setEditDebt] = useState("");
+  const totalDebt = useMemo(
+    () => clients.reduce((sum, client) => sum + (client.total_debt || 0), 0),
+    [clients],
+  );
 
   useEffect(() => {
     fetchClients();
@@ -107,9 +111,14 @@ export default function Clients() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Клиенты</h1>
-        <p className="text-muted-foreground">Управление клиентами</p>
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Клиенты</h1>
+          <p className="text-muted-foreground">Управление клиентами</p>
+        </div>
+        <div className="text-lg font-semibold">
+          Общий долг: {totalDebt.toFixed(2)} ₸
+        </div>
       </div>
 
       <Card className="p-6">

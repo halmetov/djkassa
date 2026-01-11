@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sqlalchemy.exc import OperationalError
 
 from app.core.config import Settings
+from app.database.base import Base
+from app.database.session import engine
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +32,36 @@ def _safe_import_alembic():
         )
         return None, None
     return command, Config
+
+
+def _list_migration_files() -> list[Path]:
+    versions_dir = MIGRATIONS_PATH / "versions"
+    if not versions_dir.exists():
+        return []
+    return [path for path in versions_dir.glob("*.py") if path.name != "__init__.py"]
+
+
+def _should_bootstrap_schema(settings: Settings) -> bool:
+    env = (settings.environment or "").lower()
+    return settings.debug or env == "dev"
+
+
+def _bootstrap_schema_when_empty(settings: Settings) -> bool:
+    if _list_migration_files():
+        return False
+
+    if not _should_bootstrap_schema(settings):
+        LOGGER.info(
+            "No migration files found but environment is not dev/debug; skipping automatic schema creation."
+        )
+        return False
+
+    LOGGER.warning(
+        "No Alembic migrations found in %s. Creating tables directly from models (dev-only fallback).",
+        MIGRATIONS_PATH / "versions",
+    )
+    Base.metadata.create_all(bind=engine)
+    return True
 
 
 def create_alembic_config(settings: Settings):
@@ -59,6 +92,10 @@ def _generate_revision_if_needed(command, config: Config, message: str) -> None:
 
 
 def run_migrations_on_startup(settings: Settings, *, raise_on_error: bool = True) -> None:
+    if _bootstrap_schema_when_empty(settings):
+        LOGGER.info("Schema created directly from models because no migrations were found (dev/debug mode).")
+        return
+
     if not settings.auto_run_migrations:
         LOGGER.info("Automatic migrations disabled; skipping upgrade.")
         return
@@ -82,13 +119,23 @@ def run_migrations_on_startup(settings: Settings, *, raise_on_error: bool = True
             _generate_revision_if_needed(command, config, "Auto generated migration")
         else:
             LOGGER.info("Autogenerate disabled; applying existing migrations only.")
+        upgrade_start = time.perf_counter()
+        LOGGER.info("Alembic upgrade to head starting")
         command.upgrade(config, "head")
+        LOGGER.info("Alembic upgrade to head finished in %.2fs", time.perf_counter() - upgrade_start)
     except OperationalError as exc:
         LOGGER.error("Automatic migrations failed; database is not reachable", exc_info=True)
         if raise_on_error:
             raise
-    except Exception:
-        LOGGER.exception("Failed to run automatic migrations")
+    except Exception as exc:
+        error_message = str(exc)
+        if "Multiple head revisions are present" in error_message:
+            LOGGER.error(
+                "Alembic detected multiple heads. Run 'alembic heads' and merge them (alembic merge <head1> <head2> ...).",
+                exc_info=True,
+            )
+        else:
+            LOGGER.exception("Failed to run automatic migrations")
         if raise_on_error:
             raise
 
@@ -103,7 +150,16 @@ def upgrade_head(settings: Settings) -> None:
         raise SystemExit("Alembic configuration not found; cannot run migrations.")
 
     LOGGER.info("Applying migrations up to head.")
-    command.upgrade(config, "head")
+    try:
+        command.upgrade(config, "head")
+    except Exception as exc:
+        error_message = str(exc)
+        if "Multiple head revisions are present" in error_message:
+            LOGGER.error(
+                "Alembic detected multiple heads. Merge revisions first: alembic heads && alembic merge <head1> <head2> ...",
+                exc_info=True,
+            )
+        raise
 
 
 def main() -> None:

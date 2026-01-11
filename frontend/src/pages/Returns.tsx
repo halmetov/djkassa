@@ -45,6 +45,12 @@ type SaleDetail = {
   items: SaleDetailItem[];
 };
 
+type Client = {
+  id: number;
+  name: string;
+  total_debt: number;
+};
+
 type ReturnSummary = {
   id: number;
   sale_id: number;
@@ -75,6 +81,9 @@ export default function Returns() {
   const [history, setHistory] = useState<ReturnSummary[]>([]);
   const [selectedReturn, setSelectedReturn] = useState<ReturnDetail | null>(null);
   const [showReturnModal, setShowReturnModal] = useState(false);
+  const [showDebtModal, setShowDebtModal] = useState(false);
+  const [outstandingDebt, setOutstandingDebt] = useState<number | null>(null);
+  const [debtOffsetAmount, setDebtOffsetAmount] = useState("");
 
   const searchSale = async () => {
     if (!searchSaleId.trim()) {
@@ -85,6 +94,8 @@ export default function Returns() {
       const saleData = await apiGet<SaleDetail>(`/api/sales/${searchSaleId.trim()}`);
       setSale(saleData);
       setReturnItems(new Map());
+      setOutstandingDebt(null);
+      setDebtOffsetAmount("");
     } catch (error) {
       console.error(error);
       toast.error("Чек не найден");
@@ -137,37 +148,62 @@ export default function Returns() {
     }, 0);
   };
 
-  const handleReturn = async () => {
+  const handleReturn = async (options?: { applyToDebt?: boolean; offsetAmount?: number }) => {
     if (!sale) return;
     if (returnItems.size === 0) {
       toast.error("Выберите товары для возврата");
       return;
     }
     try {
-      for (const [itemId, returnQty] of returnItems.entries()) {
-        const item = sale.items.find((i) => i.id === itemId);
-        if (!item) continue;
-        await apiPost("/api/returns", {
-          sale_id: sale.id,
-          type: "by_item",
-          items: [
-            {
-              sale_item_id: item.id,
-              quantity: returnQty,
-            },
-          ],
-        });
-      }
+      const items = Array.from(returnItems.entries()).map(([itemId, returnQty]) => ({
+        sale_item_id: itemId,
+        quantity: returnQty,
+      }));
+      await apiPost("/api/returns", {
+        sale_id: sale.id,
+        type: "by_item",
+        items,
+        apply_to_debt: options?.applyToDebt ?? false,
+        debt_offset_amount: options?.offsetAmount ?? null,
+      });
       toast.success("Возврат выполнен успешно");
       setSale(null);
       setReturnItems(new Map());
       setSearchSaleId("");
       setShowConfirmModal(false);
+      setShowDebtModal(false);
+      setOutstandingDebt(null);
+      setDebtOffsetAmount("");
       loadHistory();
     } catch (error) {
       console.error(error);
       toast.error("Ошибка при возврате");
     }
+  };
+
+  const handleReturnRequest = async () => {
+    if (!sale) return;
+    if (returnItems.size === 0) {
+      toast.error("Выберите товары для возврата");
+      return;
+    }
+    const totalReturn = getTotalReturnAmount();
+    if (sale.client_id) {
+      try {
+        const client = await apiGet<Client>(`/api/clients/${sale.client_id}`);
+        setOutstandingDebt(client.total_debt);
+        if (client.total_debt > 0) {
+          const maxOffset = Math.min(totalReturn, client.total_debt);
+          setDebtOffsetAmount(maxOffset.toFixed(2));
+          setShowDebtModal(true);
+          return;
+        }
+      } catch (error) {
+        console.error(error);
+        toast.error("Не удалось получить долг клиента");
+      }
+    }
+    setShowConfirmModal(true);
   };
 
   return (
@@ -251,7 +287,7 @@ export default function Returns() {
 
             <div className="flex justify-between items-center border-t pt-4">
               <div className="text-xl font-bold">Итого к возврату: {getTotalReturnAmount().toFixed(2)} ₸</div>
-              <Button onClick={() => setShowConfirmModal(true)} disabled={returnItems.size === 0}>
+              <Button onClick={handleReturnRequest} disabled={returnItems.size === 0}>
                 Выполнить возврат
               </Button>
             </div>
@@ -329,6 +365,51 @@ export default function Returns() {
               Отмена
             </Button>
             <Button onClick={handleReturn}>Подтвердить</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDebtModal} onOpenChange={setShowDebtModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Погашение долга при возврате</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 text-sm">
+            <p>У клиента есть долг. Зачесть возврат в погашение долга?</p>
+            <div className="text-muted-foreground">
+              Долг клиента: {outstandingDebt?.toFixed(2)} ₸
+            </div>
+            <div>
+              <Label>Сумма зачета</Label>
+              <Input
+                type="number"
+                min="0"
+                value={debtOffsetAmount}
+                onChange={(e) => setDebtOffsetAmount(e.target.value)}
+              />
+              <div className="text-xs text-muted-foreground">
+                Максимум: {Math.min(getTotalReturnAmount(), outstandingDebt || 0).toFixed(2)} ₸
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => handleReturn({ applyToDebt: false })}>
+              Не зачитывать
+            </Button>
+            <Button
+              onClick={() => {
+                const maxOffset = Math.min(getTotalReturnAmount(), outstandingDebt || 0);
+                const parsed = parseFloat(debtOffsetAmount);
+                const safeAmount = Number.isFinite(parsed)
+                  ? Math.min(Math.max(parsed, 0), maxOffset)
+                  : 0;
+                handleReturn({ applyToDebt: true, offsetAmount: safeAmount });
+              }}
+            >
+              Зачесть долг
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

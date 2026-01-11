@@ -9,6 +9,7 @@ class PosProduct(BaseModel):
     name: str
     barcode: Optional[str]
     sale_price: float
+    red_price: Optional[float] = None
     unit: str
     branch_id: Optional[int]
     branch_name: Optional[str]
@@ -17,4 +18,3 @@ class PosProduct(BaseModel):
 
     class Config:
         from_attributes = True
-

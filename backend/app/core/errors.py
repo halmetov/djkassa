@@ -21,8 +21,10 @@ def _build_base_payload(
     request: Request, *, error_type: str, detail: str, error_code: str | None = None, trace: str | None = None
 ) -> dict[str, Any]:
     settings = get_settings()
-    request_id = str(uuid.uuid4())
-    trace_id = str(uuid.uuid4())
+    request_id = getattr(request.state, "request_id", None) or str(uuid.uuid4())
+    trace_id = getattr(request.state, "trace_id", None) or str(uuid.uuid4())
+    request.state.request_id = request_id
+    request.state.trace_id = trace_id
     payload: dict[str, Any] = {
         "detail": detail,
         "error_code": error_code or error_type,

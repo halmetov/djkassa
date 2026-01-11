@@ -71,9 +71,21 @@ class SummaryResponse(BaseModel):
     end_date: date
     cash_total: float
     card_total: float
+    debt_payments_total: float
+    returns_total: float
+    new_debts_total: float
+    cashbox_total: float
     debts_created_amount: float
     debt_payments_amount: float
     refunds_total: float
     sales_total: float
     grand_total: float
     total_debt_all_clients: float
+
+
+class ProfitReportResponse(BaseModel):
+    month: str
+    sales_total: float
+    cogs_total: float
+    expenses_total: float
+    profit: float

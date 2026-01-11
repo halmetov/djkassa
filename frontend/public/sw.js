@@ -1,14 +1,13 @@
-const CACHE_NAME = "kassa-static-v1";
-const ASSETS = [
-  "/",
-  "/index.html",
-  "/manifest.webmanifest",
-  "/placeholder.svg",
-];
+const CACHE_VERSION = "v2";
+const CACHE_NAME = `kassa-static-${CACHE_VERSION}`;
+const ASSETS = ["/", "/index.html", "/manifest.webmanifest", "/placeholder.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting()),
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(ASSETS))
+      .then(() => self.skipWaiting()),
   );
 });
 
@@ -28,6 +27,23 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Always prefer network for SPA shell to avoid stale UI; fallback to cache when offline
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put("/", copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request).then((cached) => cached || caches.match("/index.html"))),
+    );
+    return;
+  }
+
+  // Cache-first for static assets
   event.respondWith(
     caches.match(request).then((response) => {
       if (response) return response;

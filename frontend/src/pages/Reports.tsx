@@ -78,6 +78,10 @@ type ReportSummary = {
   end_date: string;
   cash_total: number;
   card_total: number;
+  debt_payments_total: number;
+  returns_total: number;
+  new_debts_total: number;
+  cashbox_total: number;
   debts_created_amount: number;
   debt_payments_amount: number;
   refunds_total: number;
@@ -87,7 +91,8 @@ type ReportSummary = {
 };
 
 const formatDateInput = (date: Date) => date.toISOString().split("T")[0];
-const formatAmount = (value?: number | null) => (value ?? 0).toFixed(2);
+const formatAmount = (value?: number | null) =>
+  new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value ?? 0);
 
 export default function Reports() {
   const { user } = useOutletContext<{ user: AuthUser | null }>();
@@ -109,17 +114,22 @@ export default function Reports() {
     setEndDate(endIso);
     setStartDate(startIso);
     fetchReportData(start, now);
-    loadSellers();
   }, []);
 
   useEffect(() => {
     if (!user || !startDate || !endDate) return;
-    if (user.role === "employee") {
-      const selfId = String(user.id);
-      setSellerFilter(selfId);
-      fetchReportData(new Date(startDate), new Date(endDate), selfId);
+    const effectiveSeller = user.role === "employee" ? String(user.id) : sellerFilter;
+    if (user.role === "employee" && sellerFilter !== String(user.id)) {
+      setSellerFilter(String(user.id));
+      return;
     }
-  }, [user, startDate, endDate]);
+    fetchReportData(new Date(startDate), new Date(endDate), effectiveSeller ?? undefined);
+  }, [user, startDate, endDate, sellerFilter]);
+
+  useEffect(() => {
+    if (!user || user.role !== "admin") return;
+    loadSellers();
+  }, [user]);
 
   const loadSellers = async () => {
     try {
@@ -137,7 +147,7 @@ export default function Reports() {
       if (start) params.set("start_date", formatDateInput(start));
       if (end) params.set("end_date", formatDateInput(end));
       const seller = sellerId ?? sellerFilter;
-      if (seller && seller !== "all") params.set("seller_id", seller);
+      if (seller && seller !== "all") params.set("user_id", seller);
       const data = await apiGet<ReportSummary>(`/api/reports/summary${params.toString() ? `?${params.toString()}` : ""}`);
       setSummary(data);
     } catch (error) {
@@ -214,67 +224,53 @@ export default function Reports() {
               Применить фильтр
             </Button>
           </div>
-          <div>
-            <Label>Сотрудник</Label>
-            <Select
-              value={sellerFilter ?? undefined}
-              onValueChange={(val) => {
-                setSellerFilter(val);
-                if (startDate && endDate) {
-                  fetchReportData(new Date(startDate), new Date(endDate), val);
-                }
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Все сотрудники" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Все</SelectItem>
-                {sellers
-                  .filter((s) => s.id !== null && s.id !== undefined)
-                  .map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {user?.role === "admin" && (
+            <div>
+              <Label>Сотрудник</Label>
+              <Select
+                value={sellerFilter ?? undefined}
+                onValueChange={(val) => {
+                  setSellerFilter(val);
+                  if (startDate && endDate) {
+                    fetchReportData(new Date(startDate), new Date(endDate), val);
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Все сотрудники" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все</SelectItem>
+                  {sellers
+                    .filter((s) => s.id !== null && s.id !== undefined)
+                    .map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="p-4 space-y-2">
-            <div className="text-sm text-muted-foreground">Всего продаж</div>
-            <div className="text-2xl font-bold">{formatAmount(summary?.grand_total)} ₸</div>
-            <p className="text-sm text-muted-foreground">
-              Продажи (с возвратами): {formatAmount(summary?.sales_total)} ₸
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Создано долгов: {formatAmount(summary?.debts_created_amount)} ₸
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Оплаты долгов: {formatAmount(summary?.debt_payments_amount)} ₸
-            </p>
-          </Card>
-          <Card className="p-4 space-y-1">
-            <div className="text-sm text-muted-foreground">Наличные</div>
-            <div className="text-2xl font-bold">{formatAmount(summary?.cash_total)} ₸</div>
-            <p className="text-sm text-muted-foreground">С учётом возвратов и оплат долгов</p>
-          </Card>
-          <Card className="p-4 space-y-1">
-            <div className="text-sm text-muted-foreground">Карта</div>
-            <div className="text-2xl font-bold">{formatAmount(summary?.card_total)} ₸</div>
-            <p className="text-sm text-muted-foreground">С учётом возвратов и оплат долгов</p>
-          </Card>
-          <Card className="p-4 space-y-2">
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>Долги</span>
-              <span>всего: {formatAmount(summary?.total_debt_all_clients)} ₸</span>
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card className="p-4 space-y-3">
+            <div className="text-sm text-muted-foreground">Все продажи</div>
+            <div className="text-2xl font-bold">{formatAmount(summary?.sales_total)} ₸</div>
             <div className="space-y-1 text-sm text-muted-foreground">
-              <div>Долги за период: {formatAmount(summary?.debts_created_amount)} ₸</div>
-              <div>Оплаченные долги за период: {formatAmount(summary?.debt_payments_amount)} ₸</div>
-              <div>Всего долгов сейчас: {formatAmount(summary?.total_debt_all_clients)} ₸</div>
+              <div>Возврат: {formatAmount(summary?.returns_total)} ₸</div>
+              <div>Долги: {formatAmount(summary?.new_debts_total)} ₸</div>
+            </div>
+          </Card>
+          <Card className="p-4 space-y-3">
+            <div className="text-sm text-muted-foreground">Касса</div>
+            <div className="text-2xl font-bold">{formatAmount(summary?.cashbox_total)} ₸</div>
+            <div className="space-y-1 text-sm text-muted-foreground">
+              <div>Наличные: {formatAmount(summary?.cash_total)} ₸</div>
+              <div>Карта: {formatAmount(summary?.card_total)} ₸</div>
+              <div>Погашенный долг: {formatAmount(summary?.debt_payments_total)} ₸</div>
+              <div>Возврат: {formatAmount(summary?.returns_total)} ₸</div>
             </div>
           </Card>
         </div>

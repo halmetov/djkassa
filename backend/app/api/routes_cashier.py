@@ -48,6 +48,7 @@ async def list_cashier_products(
                 name=product.name,
                 barcode=product.barcode,
                 sale_price=product.sale_price or 0,
+                red_price=float(product.red_price) if product.red_price is not None else None,
                 unit=product.unit,
                 image_url=product.image_url,
                 photo=product.photo,

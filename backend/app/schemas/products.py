@@ -1,7 +1,8 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator
 from pydantic.config import ConfigDict
 
 
@@ -13,6 +14,7 @@ class ProductBase(BaseModel):
     purchase_price: float | None = 0
     sale_price: float | None = 0
     wholesale_price: float | None = 0
+    red_price: Optional[float] = None
     limit: int | None = 0
     rating: int | None = 0
     image_url: str | None = None
@@ -53,3 +55,7 @@ class Product(ProductBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("red_price")
+    def serialize_red_price(self, value: Decimal | float | None) -> float | None:
+        return float(value) if value is not None else None

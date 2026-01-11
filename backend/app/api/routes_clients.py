@@ -16,6 +16,14 @@ async def list_clients(db: Session = Depends(get_db)):
     return result.scalars().all()
 
 
+@router.get("/{client_id}", response_model=client_schema.Client, dependencies=[Depends(require_employee)])
+async def get_client(client_id: int, db: Session = Depends(get_db)):
+    client = db.get(Client, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return client
+
+
 @router.post(
     "",
     response_model=client_schema.Client,
