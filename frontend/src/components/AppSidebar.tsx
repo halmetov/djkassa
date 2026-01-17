@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -16,6 +15,7 @@ import {
   TrendingDown,
   Package,
   ShoppingCart,
+  ShoppingBag,
   Warehouse,
   RotateCcw,
   BarChart3,
@@ -43,6 +43,7 @@ const menuItems = [
   { title: "Склад", url: "/warehouse", icon: Warehouse },
   { title: "Перемещение", url: "/movements", icon: ArrowLeftRight },
   { title: "Касса", url: "/pos", icon: ShoppingCart },
+  { title: "Продажа", url: "/counterparty-sales", icon: ShoppingBag },
   { title: "Возврат", url: "/returns", icon: RotateCcw },
   { title: "Отчет", url: "/reports", icon: FileText },
   { title: "Отчет по прибыли", url: "/reports/profit", icon: FileText, adminOnly: true },
@@ -56,6 +57,7 @@ const productionMenuItems = [
   { title: "Приход (Цех)", url: "/workshop/income", icon: TrendingDown },
   { title: "Производственные расходы", url: "/workshop/expenses", icon: HandCoins },
   { title: "Сотрудники (Цех)", url: "/workshop/employees", icon: Users },
+  { title: "Зарплата", url: "/workshop/salary", icon: HandCoins, roles: ["admin", "production_manager"] },
   { title: "Отчет (Цех)", url: "/workshop/report", icon: FileText },
 ];
 
@@ -63,6 +65,7 @@ const systemItems = [
   { title: "Категории", url: "/categories", icon: Tags, adminOnly: false },
   { title: "Товары", url: "/products", icon: Package, adminOnly: false },
   { title: "Клиенты", url: "/clients", icon: UserCircle, adminOnly: false },
+  { title: "Контрагенты", url: "/counterparties", icon: Users, adminOnly: true },
   { title: "Сотрудники", url: "/employees", icon: Users, adminOnly: true },
   { title: "Филиалы", url: "/branches", icon: Building2, adminOnly: true },
 ];
@@ -70,17 +73,15 @@ const systemItems = [
 type AppSidebarProps = {
   user: AuthUser | null;
   lowStockCount?: number;
-  isOpen: boolean;
-  onClose: () => void;
   isLoadingUser?: boolean;
 };
 
-export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser = false }: AppSidebarProps) {
+export function AppSidebar({ user, lowStockCount, isLoadingUser = false }: AppSidebarProps) {
   const { open, openMobile, setOpenMobile } = useSidebar();
+  const isSidebarOpen = open || openMobile;
   const location = useLocation();
   const navigate = useNavigate();
   const currentPath = location.pathname;
-  const previousOpenMobile = useRef(openMobile);
 
   const isSystemActive = systemItems.some((item) => currentPath === item.url);
   const isProductionActive = productionMenuItems.some((item) => currentPath === item.url);
@@ -90,6 +91,7 @@ export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser
 
   const allowedForEmployee = [
     "/pos",
+    "/counterparty-sales",
     "/warehouse",
     "/income",
     "/returns",
@@ -120,26 +122,17 @@ export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser
     }
   };
 
-  useEffect(() => {
-    setOpenMobile(isOpen);
-  }, [isOpen, setOpenMobile]);
-
-  useEffect(() => {
-    if (previousOpenMobile.current && !openMobile) {
-      onClose();
-    }
-    previousOpenMobile.current = openMobile;
-  }, [onClose, openMobile]);
-
   const handleNavigate = () => {
-    onClose();
+    if (openMobile) {
+      setOpenMobile(false);
+    }
   };
 
   return (
-    <Sidebar collapsible="icon" className="border-r">
+    <Sidebar collapsible="offcanvas" className="border-r">
       <SidebarContent>
         <div className="p-4 border-b">
-          {open && (
+          {isSidebarOpen && (
             <div className="space-y-1">
               <h2 className="text-lg font-bold text-sidebar-foreground">POS Система</h2>
               {user && (
@@ -169,7 +162,7 @@ export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser
                     activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                   >
                     <item.icon className="h-4 w-4" />
-                    {open && (
+                    {isSidebarOpen && (
                         <span className="flex items-center gap-2">
                           {item.title}
                           {item.title === "Склад" && lowStockCount && lowStockCount > 0 && (
@@ -196,7 +189,7 @@ export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser
               <SidebarGroupLabel asChild>
                 <CollapsibleTrigger className="hover:bg-sidebar-accent">
                   <FileText className="h-4 w-4" />
-                  {open && (
+                  {isSidebarOpen && (
                     <>
                       <span>Производство</span>
                       <ChevronRight className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-90 h-4 w-4" />
@@ -207,7 +200,13 @@ export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser
               <CollapsibleContent>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    {productionMenuItems.map((item) => (
+                    {productionMenuItems
+                      .filter((item) => {
+                        if (!item.roles) return true;
+                        if (!user) return false;
+                        return item.roles.includes(user.role);
+                      })
+                      .map((item) => (
                       <SidebarMenuItem key={item.title}>
                         <SidebarMenuButton asChild>
                           <NavLink
@@ -217,7 +216,7 @@ export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser
                             activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                           >
                             <item.icon className="h-4 w-4" />
-                            {open && <span>{item.title}</span>}
+                            {isSidebarOpen && <span>{item.title}</span>}
                           </NavLink>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
@@ -235,7 +234,7 @@ export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser
               <SidebarGroupLabel asChild>
                 <CollapsibleTrigger className="hover:bg-sidebar-accent">
                   <Settings className="h-4 w-4" />
-                  {open && (
+                  {isSidebarOpen && (
                     <>
                       <span>Система</span>
                       <ChevronRight className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-90 h-4 w-4" />
@@ -259,15 +258,15 @@ export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser
                           <SidebarMenuButton asChild>
                             <NavLink
                               to={item.url}
-                              className="hover:bg-sidebar-accent"
-                              onClick={handleNavigate}
-                              activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                            >
-                              <item.icon className="h-4 w-4" />
-                              {open && <span>{item.title}</span>}
-                            </NavLink>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
+                            className="hover:bg-sidebar-accent"
+                            onClick={handleNavigate}
+                            activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                          >
+                            <item.icon className="h-4 w-4" />
+                            {isSidebarOpen && <span>{item.title}</span>}
+                          </NavLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
                       ))}
                   </SidebarMenu>
                 </SidebarGroupContent>
@@ -282,7 +281,7 @@ export function AppSidebar({ user, lowStockCount, isOpen, onClose, isLoadingUser
               <SidebarMenuItem>
                 <SidebarMenuButton onClick={handleLogout}>
                   <LogOut className="h-4 w-4" />
-                  {open && <span>Выход</span>}
+                  {isSidebarOpen && <span>Выход</span>}
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

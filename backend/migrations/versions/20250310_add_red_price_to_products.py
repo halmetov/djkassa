@@ -18,11 +18,19 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column(
-        "products",
-        sa.Column("red_price", sa.Numeric(12, 2), nullable=True),
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {column["name"] for column in inspector.get_columns("products")}
+    if "red_price" not in columns:
+        op.add_column(
+            "products",
+            sa.Column("red_price", sa.Numeric(12, 2), nullable=True),
+        )
 
 
 def downgrade():
-    op.drop_column("products", "red_price")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {column["name"] for column in inspector.get_columns("products")}
+    if "red_price" in columns:
+        op.drop_column("products", "red_price")

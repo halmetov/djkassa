@@ -8,7 +8,6 @@ export default defineConfig(({ mode }) => {
   const host = process.env.VITE_HOST || "0.0.0.0";
   const port = Number(process.env.VITE_PORT || 8080);
 
-<<<<<<< HEAD
   return {
     appType: "spa",
     server: {
@@ -20,16 +19,6 @@ export default defineConfig(({ mode }) => {
         host: "localhost",
         port,
       },
-=======
-    return {
-      appType: "spa",
-      server: {
-        host: HOST,         // фиксируем хост
-        port: PORT,         // фиксируем порт
-        strictPort: true,   // если порт занят — не прыгать на другой, а упасть с ошибкой
-      // при работе по LAN иногда полезно:
-      // hmr: { host: HOST, clientPort: PORT },
->>>>>>> e4494f3fb22711ac05788128b3a97ef4ae0dbcb1
     },
     plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
     resolve: {

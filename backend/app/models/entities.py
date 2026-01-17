@@ -250,6 +250,58 @@ class Client(Base, TimestampMixin):
     debt_payments: Mapped[List["DebtPayment"]] = relationship(back_populates="client")
 
 
+class Counterparty(Base, TimestampMixin):
+    __tablename__ = "counterparties"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    company_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    debt: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True, default=None)
+
+    sales: Mapped[List["CounterpartySale"]] = relationship(back_populates="counterparty")
+
+
+class CounterpartySale(Base, TimestampMixin):
+    __tablename__ = "counterparty_sales"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    counterparty_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("counterparties.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    branch_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("branches.id", ondelete="SET NULL"), nullable=True
+    )
+    total_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0"), server_default=text("0")
+    )
+
+    counterparty: Mapped[Optional[Counterparty]] = relationship(back_populates="sales")
+    created_by: Mapped[Optional["User"]] = relationship("User")
+    branch: Mapped[Optional[Branch]] = relationship("Branch")
+    items: Mapped[List["CounterpartySaleItem"]] = relationship(
+        back_populates="sale", cascade="all, delete-orphan"
+    )
+
+
+class CounterpartySaleItem(Base):
+    __tablename__ = "counterparty_sale_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sale_id: Mapped[int] = mapped_column(ForeignKey("counterparty_sales.id", ondelete="CASCADE"))
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    cost_price_snapshot: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+
+    sale: Mapped["CounterpartySale"] = relationship(back_populates="items")
+    product: Mapped[Product] = relationship()
+
+
 class Sale(Base, TimestampMixin):
     __tablename__ = "sales"
 
@@ -441,6 +493,23 @@ class WorkshopOrderPayout(Base, TimestampMixin):
 
     order: Mapped[WorkshopOrder] = relationship("WorkshopOrder", back_populates="payouts")
     employee: Mapped[WorkshopEmployee] = relationship("WorkshopEmployee")
+
+
+class WorkshopSalaryTransaction(Base):
+    __tablename__ = "workshop_salary_transactions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("workshop_employees.id", ondelete="SET NULL"), nullable=True
+    )
+    type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    employee: Mapped[Optional[WorkshopEmployee]] = relationship("WorkshopEmployee")
+    created_by: Mapped[Optional["User"]] = relationship("User")
 
 
 class WorkshopOrderClosure(Base, TimestampMixin):

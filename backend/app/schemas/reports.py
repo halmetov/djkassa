@@ -89,3 +89,10 @@ class ProfitReportResponse(BaseModel):
     cogs_total: float
     expenses_total: float
     profit: float
+
+
+class CounterpartyProfitReportResponse(BaseModel):
+    count_sales: int
+    revenue: float
+    cost: float
+    profit: float

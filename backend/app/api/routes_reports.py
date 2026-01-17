@@ -5,16 +5,14 @@ from calendar import monthrange
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-<<<<<<< HEAD
 from app.auth.security import get_current_user, require_admin
-=======
-from app.auth.security import get_current_user
->>>>>>> e4494f3fb22711ac05788128b3a97ef4ae0dbcb1
 from app.core.enums import UserRole
 from app.database.session import get_db
 from app.models.entities import (
     Branch,
     Client,
+    CounterpartySale,
+    CounterpartySaleItem,
     Debt,
     DebtPayment,
     Expense,
@@ -51,15 +49,7 @@ def _resolve_report_scope(
         if seller_id is not None and seller_id != current_user.id:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         effective_seller_id = current_user.id
-<<<<<<< HEAD
         effective_branch_id = None
-=======
-
-        if branch_id is None:
-            effective_branch_id = current_user.branch_id
-        elif current_user.branch_id is not None and branch_id != current_user.branch_id:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
->>>>>>> e4494f3fb22711ac05788128b3a97ef4ae0dbcb1
 
     return effective_seller_id, effective_branch_id
 
@@ -90,11 +80,8 @@ async def get_summary(
     start_dt = datetime.combine(start_date, time.min)
     end_dt = datetime.combine(end_date, time.max)
 
-<<<<<<< HEAD
     if seller_id is None and user_id is not None:
         seller_id = user_id
-=======
->>>>>>> e4494f3fb22711ac05788128b3a97ef4ae0dbcb1
     seller_id, branch_id = _resolve_report_scope(current_user, seller_id, branch_id)
 
     sale_filters = [Sale.created_at >= start_dt, Sale.created_at <= end_dt]
@@ -291,6 +278,63 @@ async def get_profit_report(
         cogs_total=cogs_total,
         expenses_total=float(expenses_total or 0),
         profit=profit_total,
+    )
+
+
+@router.get(
+    "/profit/counterparties",
+    response_model=report_schema.CounterpartyProfitReportResponse,
+    dependencies=[Depends(require_admin)],
+)
+async def get_counterparty_profit_report(
+    month: str,
+    counterparty_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    try:
+        period_start = datetime.strptime(month, "%Y-%m").date()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid month format. Use YYYY-MM.") from exc
+
+    _, last_day = monthrange(period_start.year, period_start.month)
+    period_end = date(period_start.year, period_start.month, last_day)
+    start_dt = datetime.combine(period_start, time.min)
+    end_dt = datetime.combine(period_end, time.max)
+
+    sale_filters = [
+        CounterpartySale.created_at >= start_dt,
+        CounterpartySale.created_at <= end_dt,
+    ]
+    if counterparty_id:
+        sale_filters.append(CounterpartySale.counterparty_id == counterparty_id)
+
+    count_sales = db.execute(select(func.count(CounterpartySale.id)).where(*sale_filters)).scalar_one()
+
+    totals = db.execute(
+        select(
+            func.coalesce(func.sum(CounterpartySaleItem.quantity * CounterpartySaleItem.price), 0),
+            func.coalesce(
+                func.sum(
+                    CounterpartySaleItem.quantity
+                    * func.coalesce(CounterpartySaleItem.cost_price_snapshot, Product.purchase_price, 0)
+                ),
+                0,
+            ),
+        )
+        .join(CounterpartySale, CounterpartySaleItem.sale_id == CounterpartySale.id)
+        .join(Product, CounterpartySaleItem.product_id == Product.id)
+        .where(*sale_filters)
+    ).one()
+
+    revenue = float(totals[0] or 0)
+    cost = float(totals[1] or 0)
+    profit = revenue - cost
+
+    return report_schema.CounterpartyProfitReportResponse(
+        count_sales=int(count_sales or 0),
+        revenue=revenue,
+        cost=cost,
+        profit=profit,
     )
 
 

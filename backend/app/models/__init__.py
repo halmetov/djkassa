@@ -1,6 +1,9 @@
 from .entities import (
     Branch,
     Category,
+    Counterparty,
+    CounterpartySale,
+    CounterpartySaleItem,
     Client,
     Debt,
     DebtPayment,
@@ -21,6 +24,7 @@ from .entities import (
     WorkshopOrder,
     WorkshopOrderMaterial,
     WorkshopOrderPayout,
+    WorkshopSalaryTransaction,
     WorkshopOrderClosure,
 )
 from .user import User
@@ -28,6 +32,9 @@ from .user import User
 __all__ = [
     "Branch",
     "Category",
+    "Counterparty",
+    "CounterpartySale",
+    "CounterpartySaleItem",
     "Client",
     "Debt",
     "DebtPayment",
@@ -48,6 +55,7 @@ __all__ = [
     "WorkshopOrder",
     "WorkshopOrderMaterial",
     "WorkshopOrderPayout",
+    "WorkshopSalaryTransaction",
     "WorkshopOrderClosure",
     "User",
 ]

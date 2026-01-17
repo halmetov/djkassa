@@ -4,11 +4,7 @@ import time
 from contextlib import asynccontextmanager
 from pprint import pformat
 
-<<<<<<< HEAD
 from fastapi import Depends, FastAPI, HTTPException
-=======
-from fastapi import FastAPI, HTTPException
->>>>>>> e4494f3fb22711ac05788128b3a97ef4ae0dbcb1
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +14,8 @@ from app.api import (
     routes_branches,
     routes_categories,
     routes_clients,
+    routes_counterparties,
+    routes_counterparty_sales,
     routes_income,
     routes_products,
     routes_reports,
@@ -32,7 +30,7 @@ from app.api import (
     routes_production,
     routes_workshop,
 )
-from app.auth.security import reject_manager
+from app.auth.security import reject_manager, reject_production_manager
 from app.bootstrap import bootstrap
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
@@ -173,6 +171,7 @@ app.middleware_stack = app.build_middleware_stack()
 
 app.include_router(routes_auth.router, prefix="/api/auth", tags=["auth"])
 manager_restricted = [Depends(reject_manager)]
+wholesale_restricted = [Depends(reject_manager), Depends(reject_production_manager)]
 app.include_router(routes_users.router, prefix="/api/users", tags=["users"], dependencies=manager_restricted)
 app.include_router(routes_categories.router, prefix="/api/categories", tags=["categories"], dependencies=manager_restricted)
 app.include_router(routes_products.router, prefix="/api/products", tags=["products"], dependencies=manager_restricted)
@@ -180,6 +179,18 @@ app.include_router(routes_branches.router, prefix="/api/branches", tags=["branch
 app.include_router(routes_income.router, prefix="/api/income", tags=["income"], dependencies=manager_restricted)
 app.include_router(routes_sales.router, prefix="/api/sales", tags=["sales"], dependencies=manager_restricted)
 app.include_router(routes_clients.router, prefix="/api/clients", tags=["clients"], dependencies=manager_restricted)
+app.include_router(
+    routes_counterparties.router,
+    prefix="/api/counterparties",
+    tags=["counterparties"],
+    dependencies=manager_restricted,
+)
+app.include_router(
+    routes_counterparty_sales.router,
+    prefix="/api/counterparty-sales",
+    tags=["counterparty-sales"],
+    dependencies=wholesale_restricted,
+)
 app.include_router(routes_pos.router, prefix="/api/pos", tags=["pos"], dependencies=manager_restricted)
 app.include_router(routes_cashier.router, prefix="/api/cashier", tags=["cashier"], dependencies=manager_restricted)
 app.include_router(routes_reports.router, prefix="/api/reports", tags=["reports"], dependencies=manager_restricted)

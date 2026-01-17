@@ -164,6 +164,67 @@ class WorkshopReportFilter(BaseModel):
     end_date: Optional[date] = None
 
 
+class WorkshopSalaryTransactionCreate(BaseModel):
+    employee_id: int
+    amount: Decimal = Field(ge=0)
+    note: Optional[str] = None
+    date: Optional[date] = None
+
+
+class WorkshopSalarySummaryItem(BaseModel):
+    employee_id: int
+    full_name: str
+    position: Optional[str] = None
+    accrued: Decimal = Field(default=Decimal("0"))
+    payout: Decimal = Field(default=Decimal("0"))
+    bonus: Decimal = Field(default=Decimal("0"))
+    balance: Decimal = Field(default=Decimal("0"))
+
+    @field_serializer("accrued", "payout", "bonus", "balance")
+    def serialize_totals(self, value: Decimal | float) -> float:
+        return float(value)
+
+
+class WorkshopSalaryHistoryItem(BaseModel):
+    id: str
+    date: Optional[datetime]
+    employee_name: str
+    type: str
+    amount: Decimal
+    note: Optional[str] = None
+    order_id: Optional[int] = None
+    created_by_name: Optional[str] = None
+
+    @field_serializer("amount")
+    def serialize_amount(self, value: Decimal | float) -> float:
+        return float(value)
+
+
+class WorkshopReportSummaryOut(BaseModel):
+    month: str
+    orders_total: Decimal = Field(default=Decimal("0"))
+    materials_cogs: Decimal = Field(default=Decimal("0"))
+    orders_margin: Decimal = Field(default=Decimal("0"))
+    expenses_total: Decimal = Field(default=Decimal("0"))
+    salary_payout_total: Decimal = Field(default=Decimal("0"))
+    salary_bonus_total: Decimal = Field(default=Decimal("0"))
+    salary_total: Decimal = Field(default=Decimal("0"))
+    net_profit: Decimal = Field(default=Decimal("0"))
+
+    @field_serializer(
+        "orders_total",
+        "materials_cogs",
+        "orders_margin",
+        "expenses_total",
+        "salary_payout_total",
+        "salary_bonus_total",
+        "salary_total",
+        "net_profit",
+    )
+    def serialize_report_numbers(self, value: Decimal | float) -> float:
+        return float(value)
+
+
 class WorkshopStockProduct(BaseModel):
     id: int
     product_id: int

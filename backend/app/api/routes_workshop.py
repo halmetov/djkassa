@@ -6,9 +6,10 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.auth.security import get_current_user, require_workshop_only
+from app.auth.security import get_current_user, require_production_access, require_workshop_only
 from app.database.session import get_db
 from app.models import (
     Branch,
@@ -23,6 +24,7 @@ from app.models import (
     WorkshopOrderClosure,
     WorkshopOrderMaterial,
     WorkshopOrderPayout,
+    WorkshopSalaryTransaction,
 )
 from app.schemas import branches as branch_schema
 from app.schemas import workshop as workshop_schema
@@ -43,6 +45,22 @@ def _get_workshop_branch(db: Session) -> Branch:
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Workshop branch not found",
     )
+
+
+def _parse_month(month: Optional[str]) -> tuple[datetime, datetime, str]:
+    if month:
+        try:
+            start = datetime.strptime(month, "%Y-%m")
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid month format") from exc
+    else:
+        today = datetime.utcnow()
+        start = datetime(today.year, today.month, 1)
+    if start.month == 12:
+        end = datetime(start.year + 1, 1, 1)
+    else:
+        end = datetime(start.year, start.month + 1, 1)
+    return start, end, start.strftime("%Y-%m")
 
 
 @router.get("/branch", response_model=branch_schema.Branch)
@@ -515,6 +533,270 @@ def report(
     if end_date:
         query = query.filter(WorkshopOrderClosure.closed_at <= datetime.combine(end_date, datetime.max.time()))
     return query.order_by(WorkshopOrderClosure.closed_at.desc()).all()
+
+
+@router.get("/reports/summary", response_model=workshop_schema.WorkshopReportSummaryOut)
+def workshop_report_summary(
+    month: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    start, end, month_label = _parse_month(month)
+    branch_id = get_workshop_branch_id(db)
+    orders_total = (
+        db.query(func.coalesce(func.sum(WorkshopOrder.amount), 0))
+        .filter(
+            WorkshopOrder.branch_id == branch_id,
+            WorkshopOrder.created_at >= start,
+            WorkshopOrder.created_at < end,
+        )
+        .scalar()
+        or 0
+    )
+    materials_cogs = (
+        db.query(func.coalesce(func.sum(WorkshopOrderMaterial.quantity * Product.purchase_price), 0))
+        .join(WorkshopOrder, WorkshopOrder.id == WorkshopOrderMaterial.order_id)
+        .join(Product, Product.id == WorkshopOrderMaterial.product_id)
+        .filter(
+            WorkshopOrder.branch_id == branch_id,
+            WorkshopOrder.created_at >= start,
+            WorkshopOrder.created_at < end,
+        )
+        .scalar()
+        or 0
+    )
+    expenses_total = (
+        db.query(func.coalesce(func.sum(Expense.amount), 0))
+        .filter(
+            Expense.branch_id == branch_id,
+            Expense.created_at >= start,
+            Expense.created_at < end,
+        )
+        .scalar()
+        or 0
+    )
+    salary_payout_total = (
+        db.query(func.coalesce(func.sum(WorkshopSalaryTransaction.amount), 0))
+        .filter(
+            WorkshopSalaryTransaction.type == "payout",
+            WorkshopSalaryTransaction.created_at >= start,
+            WorkshopSalaryTransaction.created_at < end,
+        )
+        .scalar()
+        or 0
+    )
+    salary_bonus_total = (
+        db.query(func.coalesce(func.sum(WorkshopSalaryTransaction.amount), 0))
+        .filter(
+            WorkshopSalaryTransaction.type == "bonus",
+            WorkshopSalaryTransaction.created_at >= start,
+            WorkshopSalaryTransaction.created_at < end,
+        )
+        .scalar()
+        or 0
+    )
+    orders_total = Decimal(str(orders_total))
+    materials_cogs = Decimal(str(materials_cogs))
+    expenses_total = Decimal(str(expenses_total))
+    salary_payout_total = Decimal(str(salary_payout_total))
+    salary_bonus_total = Decimal(str(salary_bonus_total))
+    salary_total = salary_payout_total + salary_bonus_total
+    orders_margin = orders_total - materials_cogs
+    net_profit = orders_margin - (expenses_total + salary_total)
+
+    return workshop_schema.WorkshopReportSummaryOut(
+        month=month_label,
+        orders_total=orders_total,
+        materials_cogs=materials_cogs,
+        orders_margin=orders_margin,
+        expenses_total=expenses_total,
+        salary_payout_total=salary_payout_total,
+        salary_bonus_total=salary_bonus_total,
+        salary_total=salary_total,
+        net_profit=net_profit,
+    )
+
+
+@router.get("/salary/summary", response_model=list[workshop_schema.WorkshopSalarySummaryItem])
+def workshop_salary_summary(
+    month: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_production_access),
+):
+    start, end, _ = _parse_month(month)
+    employees = db.query(WorkshopEmployee).order_by(WorkshopEmployee.id.asc()).all()
+    order_payouts = dict(
+        db.query(
+            WorkshopOrderPayout.employee_id,
+            func.coalesce(func.sum(WorkshopOrderPayout.amount), 0),
+        )
+        .filter(WorkshopOrderPayout.created_at >= start, WorkshopOrderPayout.created_at < end)
+        .group_by(WorkshopOrderPayout.employee_id)
+        .all()
+    )
+    payout_transactions = dict(
+        db.query(
+            WorkshopSalaryTransaction.employee_id,
+            func.coalesce(func.sum(WorkshopSalaryTransaction.amount), 0),
+        )
+        .filter(
+            WorkshopSalaryTransaction.type == "payout",
+            WorkshopSalaryTransaction.created_at >= start,
+            WorkshopSalaryTransaction.created_at < end,
+        )
+        .group_by(WorkshopSalaryTransaction.employee_id)
+        .all()
+    )
+    bonus_transactions = dict(
+        db.query(
+            WorkshopSalaryTransaction.employee_id,
+            func.coalesce(func.sum(WorkshopSalaryTransaction.amount), 0),
+        )
+        .filter(
+            WorkshopSalaryTransaction.type == "bonus",
+            WorkshopSalaryTransaction.created_at >= start,
+            WorkshopSalaryTransaction.created_at < end,
+        )
+        .group_by(WorkshopSalaryTransaction.employee_id)
+        .all()
+    )
+
+    results: list[workshop_schema.WorkshopSalarySummaryItem] = []
+    for employee in employees:
+        full_name = " ".join(filter(None, [employee.first_name, employee.last_name])).strip() or employee.first_name
+        accrued = Decimal(str(order_payouts.get(employee.id, 0)))
+        payout = Decimal(str(payout_transactions.get(employee.id, 0)))
+        bonus = Decimal(str(bonus_transactions.get(employee.id, 0)))
+        balance = accrued + bonus - payout
+        results.append(
+            workshop_schema.WorkshopSalarySummaryItem(
+                employee_id=employee.id,
+                full_name=full_name,
+                position=employee.position,
+                accrued=accrued,
+                payout=payout,
+                bonus=bonus,
+                balance=balance,
+            )
+        )
+    return results
+
+
+@router.post("/salary/payout", status_code=status.HTTP_201_CREATED)
+def create_salary_payout(
+    payload: workshop_schema.WorkshopSalaryTransactionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_production_access),
+):
+    employee = db.get(WorkshopEmployee, payload.employee_id)
+    if not employee or not employee.active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Сотрудник не найден")
+    if payload.amount <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be positive")
+    created_at = datetime.utcnow()
+    if payload.date:
+        created_at = datetime.combine(payload.date, datetime.min.time())
+    transaction = WorkshopSalaryTransaction(
+        employee_id=employee.id,
+        type="payout",
+        amount=payload.amount,
+        note=payload.note,
+        created_by_id=current_user.id,
+        created_at=created_at,
+    )
+    db.add(transaction)
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/salary/bonus", status_code=status.HTTP_201_CREATED)
+def create_salary_bonus(
+    payload: workshop_schema.WorkshopSalaryTransactionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_production_access),
+):
+    employee = db.get(WorkshopEmployee, payload.employee_id)
+    if not employee or not employee.active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Сотрудник не найден")
+    if payload.amount <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be positive")
+    created_at = datetime.utcnow()
+    if payload.date:
+        created_at = datetime.combine(payload.date, datetime.min.time())
+    transaction = WorkshopSalaryTransaction(
+        employee_id=employee.id,
+        type="bonus",
+        amount=payload.amount,
+        note=payload.note,
+        created_by_id=current_user.id,
+        created_at=created_at,
+    )
+    db.add(transaction)
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/salary/history", response_model=list[workshop_schema.WorkshopSalaryHistoryItem])
+def workshop_salary_history(
+    month: Optional[str] = Query(None),
+    employee_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_production_access),
+):
+    start, end, _ = _parse_month(month)
+    payouts_query = (
+        db.query(WorkshopOrderPayout, WorkshopOrder, WorkshopEmployee)
+        .join(WorkshopOrder, WorkshopOrder.id == WorkshopOrderPayout.order_id)
+        .join(WorkshopEmployee, WorkshopEmployee.id == WorkshopOrderPayout.employee_id)
+        .filter(WorkshopOrderPayout.created_at >= start, WorkshopOrderPayout.created_at < end)
+    )
+    if employee_id:
+        payouts_query = payouts_query.filter(WorkshopOrderPayout.employee_id == employee_id)
+    payouts = payouts_query.all()
+
+    transactions_query = (
+        db.query(WorkshopSalaryTransaction, WorkshopEmployee, User)
+        .join(WorkshopEmployee, WorkshopEmployee.id == WorkshopSalaryTransaction.employee_id)
+        .outerjoin(User, User.id == WorkshopSalaryTransaction.created_by_id)
+        .filter(WorkshopSalaryTransaction.created_at >= start, WorkshopSalaryTransaction.created_at < end)
+    )
+    if employee_id:
+        transactions_query = transactions_query.filter(WorkshopSalaryTransaction.employee_id == employee_id)
+    transactions = transactions_query.all()
+
+    items: list[workshop_schema.WorkshopSalaryHistoryItem] = []
+    for payout, order, employee in payouts:
+        full_name = " ".join(filter(None, [employee.first_name, employee.last_name])).strip() or employee.first_name
+        creator_name = order.created_by_user.name if order.created_by_user else None
+        items.append(
+            workshop_schema.WorkshopSalaryHistoryItem(
+                id=f"accrual-{payout.id}",
+                date=payout.created_at,
+                employee_name=full_name,
+                type="accrual",
+                amount=payout.amount,
+                note=payout.note,
+                order_id=order.id,
+                created_by_name=creator_name,
+            )
+        )
+
+    for transaction, employee, creator in transactions:
+        full_name = " ".join(filter(None, [employee.first_name, employee.last_name])).strip() or employee.first_name
+        items.append(
+            workshop_schema.WorkshopSalaryHistoryItem(
+                id=f"{transaction.type}-{transaction.id}",
+                date=transaction.created_at,
+                employee_name=full_name,
+                type=transaction.type or "",
+                amount=transaction.amount or Decimal("0"),
+                note=transaction.note,
+                order_id=None,
+                created_by_name=creator.name if creator else None,
+            )
+        )
+
+    items.sort(key=lambda item: item.date or datetime.min, reverse=True)
+    return items
 
 
 def _log_request(request: Request, current_user: User | None) -> None:

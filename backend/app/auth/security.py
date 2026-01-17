@@ -169,6 +169,13 @@ def reject_manager(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def reject_production_manager(current_user: User = Depends(get_current_user)) -> User:
+    role_value = get_role_value(current_user.role)
+    if role_value == UserRole.PRODUCTION_MANAGER.value:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    return current_user
+
+
 def admin_only_for_write(request: Request, current_user: User = Depends(get_current_user)) -> User:
     role_value = get_role_value(current_user.role)
     if request.method in {"PUT", "PATCH", "DELETE"} and role_value != UserRole.ADMIN.value:

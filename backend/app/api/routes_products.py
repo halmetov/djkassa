@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from sqlalchemy import case, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,8 @@ router = APIRouter(redirect_slashes=False)
 @router.get("", response_model=list[product_schema.Product], dependencies=[Depends(require_employee)])
 async def list_products(
     branch_id: int | None = None,
+    q: str | None = None,
+    limit: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -34,6 +36,14 @@ async def list_products(
             raise HTTPException(status_code=400, detail="Сотрудник не привязан к филиалу")
 
     query = select(Product)
+    if q:
+        like = f"%{q}%"
+        query = query.where(
+            or_(
+                Product.name.ilike(like),
+                Product.barcode.ilike(like),
+            )
+        )
     if target_branch_id is not None:
         query = query.join(
             Stock,
@@ -46,6 +56,8 @@ async def list_products(
         Product.rating.asc(),
         Product.name.asc(),
     )
+    if limit:
+        query = query.limit(limit)
 
     result = db.execute(query)
     return result.scalars().all()

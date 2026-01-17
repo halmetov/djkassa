@@ -10,6 +10,8 @@ import Products from "./pages/Products";
 import Employees from "./pages/Employees";
 import Branches from "./pages/Branches";
 import Clients from "./pages/Clients";
+import Counterparties from "./pages/Counterparties";
+import CounterpartySales from "./pages/CounterpartySales";
 import Income from "./pages/Income";
 import POS from "./pages/POS";
 import Warehouse from "./pages/Warehouse";
@@ -27,6 +29,7 @@ import WorkshopStock from "./pages/WorkshopStock";
 import WorkshopIncome from "./pages/WorkshopIncome";
 import WorkshopExpenses from "./pages/WorkshopExpenses";
 import WorkshopReport from "./pages/WorkshopReport";
+import WorkshopSalary from "./pages/WorkshopSalary";
 
 const queryClient = new QueryClient();
 
@@ -43,6 +46,7 @@ const App = () => (
             <Route path="/income" element={<Income />} />
             <Route path="/warehouse" element={<Warehouse />} />
             <Route path="/pos" element={<POS />} />
+            <Route path="/counterparty-sales" element={<CounterpartySales />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/reports/profit" element={<ProfitReport />} />
             <Route path="/returns" element={<Returns />} />
@@ -54,6 +58,7 @@ const App = () => (
             <Route path="/workshop/stock" element={<WorkshopStock />} />
             <Route path="/workshop/income" element={<WorkshopIncome />} />
             <Route path="/workshop/employees" element={<WorkshopEmployees />} />
+            <Route path="/workshop/salary" element={<WorkshopSalary />} />
             <Route path="/workshop/report" element={<WorkshopReport />} />
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/categories" element={<Categories />} />
@@ -61,6 +66,7 @@ const App = () => (
             <Route path="/employees" element={<Employees />} />
             <Route path="/branches" element={<Branches />} />
             <Route path="/clients" element={<Clients />} />
+            <Route path="/counterparties" element={<Counterparties />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

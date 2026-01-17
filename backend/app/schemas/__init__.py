@@ -2,6 +2,8 @@ from .auth import *  # noqa: F401,F403
 from .branches import *  # noqa: F401,F403
 from .categories import *  # noqa: F401,F403
 from .clients import *  # noqa: F401,F403
+from .counterparties import *  # noqa: F401,F403
+from .counterparty_sales import *  # noqa: F401,F403
 from .income import *  # noqa: F401,F403
 from .products import *  # noqa: F401,F403
 from .cashier import *  # noqa: F401,F403
