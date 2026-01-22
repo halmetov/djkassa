@@ -53,6 +53,7 @@ const menuItems = [
 
 const productionMenuItems = [
   { title: "Заказы", url: "/workshop/orders", icon: FileText },
+  { title: "Частые заказы", url: "/workshop/templates", icon: FileText, roles: ["admin", "production_manager"] },
   { title: "Склад (Цех)", url: "/workshop/stock", icon: Warehouse },
   { title: "Приход (Цех)", url: "/workshop/income", icon: TrendingDown },
   { title: "Производственные расходы", url: "/workshop/expenses", icon: HandCoins },

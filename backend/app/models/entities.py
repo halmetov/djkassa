@@ -451,6 +451,9 @@ class WorkshopOrder(Base, TimestampMixin):
     created_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     branch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("branches.id", ondelete="SET NULL"))
+    template_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("workshop_order_templates.id", ondelete="SET NULL"), nullable=True
+    )
     photo: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     paid_amount: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(12, 2), nullable=True
@@ -458,6 +461,7 @@ class WorkshopOrder(Base, TimestampMixin):
 
     created_by_user: Mapped[Optional["User"]] = relationship("User")
     branch: Mapped[Optional[Branch]] = relationship("Branch")
+    template: Mapped[Optional["WorkshopOrderTemplate"]] = relationship("WorkshopOrderTemplate")
     materials: Mapped[list["WorkshopOrderMaterial"]] = relationship(
         "WorkshopOrderMaterial", back_populates="order", cascade="all, delete-orphan"
     )
@@ -527,3 +531,35 @@ class WorkshopOrderClosure(Base, TimestampMixin):
 
     order: Mapped[WorkshopOrder] = relationship("WorkshopOrder", back_populates="closure")
     closed_by_user: Mapped[Optional["User"]] = relationship("User")
+
+
+class WorkshopOrderTemplate(Base, TimestampMixin):
+    __tablename__ = "workshop_order_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"))
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+
+    branch: Mapped[Branch] = relationship("Branch")
+    created_by: Mapped[Optional["User"]] = relationship("User")
+    items: Mapped[list["WorkshopOrderTemplateItem"]] = relationship(
+        "WorkshopOrderTemplateItem", back_populates="template", cascade="all, delete-orphan"
+    )
+
+
+class WorkshopOrderTemplateItem(Base):
+    __tablename__ = "workshop_order_template_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    template_id: Mapped[int] = mapped_column(
+        ForeignKey("workshop_order_templates.id", ondelete="CASCADE")
+    )
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"), server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    template: Mapped[WorkshopOrderTemplate] = relationship("WorkshopOrderTemplate", back_populates="items")
+    product: Mapped[Product] = relationship("Product")

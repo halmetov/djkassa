@@ -72,7 +72,8 @@ class WorkshopOrderBase(BaseModel):
 
 
 class WorkshopOrderCreate(WorkshopOrderBase):
-    pass
+    template_id: Optional[int] = None
+    materials: Optional[list["WorkshopMaterialCreate"]] = None
 
 
 class WorkshopOrderUpdate(BaseModel):
@@ -90,6 +91,7 @@ class WorkshopOrderOut(WorkshopOrderBase):
     updated_at: Optional[datetime]
     closed_at: Optional[datetime]
     branch_id: Optional[int]
+    template_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -140,6 +142,66 @@ class WorkshopOrderPayoutDetail(WorkshopPayoutOut):
 class WorkshopOrderDetail(WorkshopOrderOut):
     materials: list[WorkshopOrderMaterialDetail] = []
     payouts: list[WorkshopOrderPayoutDetail] = []
+
+
+class WorkshopOrderTemplateItemIn(BaseModel):
+    product_id: int
+    quantity: Decimal
+
+
+class WorkshopOrderTemplateItemUpdate(BaseModel):
+    quantity: Decimal
+
+
+class WorkshopOrderTemplateItemOut(BaseModel):
+    id: int
+    product_id: int
+    quantity: Decimal
+    created_at: Optional[datetime]
+    product_name: Optional[str] = None
+    unit: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkshopOrderTemplateBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    active: bool = True
+
+
+class WorkshopOrderTemplateCreate(WorkshopOrderTemplateBase):
+    items: list[WorkshopOrderTemplateItemIn] = []
+
+
+class WorkshopOrderTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    active: Optional[bool] = None
+
+
+class WorkshopOrderTemplateOut(WorkshopOrderTemplateBase):
+    id: int
+    branch_id: int
+    created_by_id: Optional[int] = None
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+    items: list[WorkshopOrderTemplateItemOut] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkshopOrderTemplateListOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    active: bool
+    branch_id: int
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+    items_count: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkshopClosePayload(BaseModel):

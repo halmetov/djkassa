@@ -31,6 +31,7 @@ export const Layout = () => {
   ];
   const productionManagerAllowedRoutes = [
     "/workshop/orders",
+    "/workshop/templates",
     "/workshop/expenses",
     "/workshop/stock",
     "/workshop/income",
@@ -39,7 +40,7 @@ export const Layout = () => {
     "/workshop/salary",
   ];
   const productionAllowedRoutes = productionManagerAllowedRoutes.filter(
-    (route) => route !== "/workshop/salary",
+    (route) => route !== "/workshop/salary" && route !== "/workshop/templates",
   );
 
   const isPathAllowed = (path: string, allowed: string[]) =>

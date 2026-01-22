@@ -30,6 +30,7 @@ import WorkshopIncome from "./pages/WorkshopIncome";
 import WorkshopExpenses from "./pages/WorkshopExpenses";
 import WorkshopReport from "./pages/WorkshopReport";
 import WorkshopSalary from "./pages/WorkshopSalary";
+import WorkshopTemplates from "./pages/WorkshopTemplates";
 
 const queryClient = new QueryClient();
 
@@ -54,6 +55,7 @@ const App = () => (
             <Route path="/expenses" element={<Expenses />} />
             <Route path="/workshop/orders" element={<WorkshopOrders />} />
             <Route path="/workshop/orders/:id" element={<WorkshopOrderDetail />} />
+            <Route path="/workshop/templates" element={<WorkshopTemplates />} />
             <Route path="/workshop/expenses" element={<WorkshopExpenses />} />
             <Route path="/workshop/stock" element={<WorkshopStock />} />
             <Route path="/workshop/income" element={<WorkshopIncome />} />

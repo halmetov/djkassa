@@ -24,6 +24,8 @@ from app.models import (
     WorkshopOrderClosure,
     WorkshopOrderMaterial,
     WorkshopOrderPayout,
+    WorkshopOrderTemplate,
+    WorkshopOrderTemplateItem,
     WorkshopSalaryTransaction,
 )
 from app.schemas import branches as branch_schema
@@ -44,6 +46,59 @@ def _get_workshop_branch(db: Session) -> Branch:
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Workshop branch not found",
+    )
+
+
+def _get_template(db: Session, template_id: int) -> WorkshopOrderTemplate:
+    template = (
+        db.query(WorkshopOrderTemplate)
+        .options(joinedload(WorkshopOrderTemplate.items))
+        .filter(WorkshopOrderTemplate.id == template_id)
+        .first()
+    )
+    if not template:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден")
+    return template
+
+
+def _ensure_workshop_product(db: Session, branch_id: int, product_id: int) -> Product:
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Товар не найден")
+    stock = db.query(Stock).filter(Stock.branch_id == branch_id, Stock.product_id == product_id).first()
+    if not stock:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Товар недоступен для цеха")
+    return product
+
+
+def _serialize_template_detail(
+    template: WorkshopOrderTemplate,
+    db: Session,
+) -> workshop_schema.WorkshopOrderTemplateOut:
+    db.refresh(template, attribute_names=["items"])
+    items: list[workshop_schema.WorkshopOrderTemplateItemOut] = []
+    for item in template.items:
+        product = item.product or db.get(Product, item.product_id)
+        items.append(
+            workshop_schema.WorkshopOrderTemplateItemOut(
+                id=item.id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+                created_at=item.created_at,
+                product_name=product.name if product else None,
+                unit=product.unit if product else None,
+            )
+        )
+    return workshop_schema.WorkshopOrderTemplateOut(
+        id=template.id,
+        name=template.name,
+        description=template.description,
+        active=template.active,
+        branch_id=template.branch_id,
+        created_by_id=template.created_by_id,
+        created_at=template.created_at,
+        updated_at=template.updated_at,
+        items=items,
     )
 
 
@@ -225,6 +280,11 @@ def create_order(
     current_user: User = Depends(get_current_user),
 ):
     branch = _get_workshop_branch(db)
+    template: WorkshopOrderTemplate | None = None
+    if payload.template_id:
+        template = _get_template(db, payload.template_id)
+        if template.branch_id != branch.id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Шаблон недоступен для цеха")
     order = WorkshopOrder(
         title=payload.title,
         amount=payload.amount or Decimal("0"),
@@ -232,11 +292,294 @@ def create_order(
         description=payload.description,
         created_by_user_id=current_user.id,
         branch_id=branch.id,
+        template_id=template.id if template else None,
     )
     db.add(order)
+    db.flush()
+
+    materials_payload = payload.materials or []
+    template_items = template.items if template else []
+    material_map: dict[int, dict[str, Decimal | Optional[str]]] = {}
+
+    for item in template_items:
+        if item.quantity <= 0:
+            continue
+        existing = material_map.get(item.product_id)
+        if existing:
+            existing["quantity"] = existing["quantity"] + item.quantity
+        else:
+            material_map[item.product_id] = {"quantity": item.quantity, "unit": None}
+
+    for item in materials_payload:
+        if item.quantity <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be positive")
+        existing = material_map.get(item.product_id)
+        if existing:
+            existing["quantity"] = existing["quantity"] + item.quantity
+            if item.unit:
+                existing["unit"] = item.unit
+        else:
+            material_map[item.product_id] = {"quantity": item.quantity, "unit": item.unit}
+
+    if material_map:
+        for product_id, data in material_map.items():
+            product = _ensure_workshop_product(db, branch.id, product_id)
+            stock = (
+                db.query(Stock)
+                .filter(Stock.branch_id == branch.id, Stock.product_id == product_id)
+                .with_for_update()
+                .first()
+            )
+            if not stock or stock.quantity < float(data["quantity"]):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Недостаточно остатков на складе")
+            stock.quantity = stock.quantity - float(data["quantity"])
+            material = WorkshopOrderMaterial(
+                order_id=order.id,
+                product_id=product_id,
+                quantity=data["quantity"],
+                unit=(data["unit"] or product.unit),
+            )
+            db.add(material)
+
     db.commit()
     db.refresh(order)
     return order
+
+
+@router.get(
+    "/templates",
+    response_model=list[workshop_schema.WorkshopOrderTemplateListOut],
+    dependencies=[Depends(require_production_access)],
+)
+def list_templates(
+    query: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    branch = _get_workshop_branch(db)
+    items_count = (
+        db.query(
+            WorkshopOrderTemplateItem.template_id,
+            func.count(WorkshopOrderTemplateItem.id).label("items_count"),
+        )
+        .group_by(WorkshopOrderTemplateItem.template_id)
+        .subquery()
+    )
+    templates_query = (
+        db.query(WorkshopOrderTemplate, func.coalesce(items_count.c.items_count, 0))
+        .outerjoin(items_count, WorkshopOrderTemplate.id == items_count.c.template_id)
+        .filter(WorkshopOrderTemplate.branch_id == branch.id)
+    )
+    if query:
+        term = f"%{query}%"
+        templates_query = templates_query.filter(WorkshopOrderTemplate.name.ilike(term))
+    templates = templates_query.order_by(WorkshopOrderTemplate.created_at.desc()).all()
+    results: list[workshop_schema.WorkshopOrderTemplateListOut] = []
+    for template, count in templates:
+        results.append(
+            workshop_schema.WorkshopOrderTemplateListOut(
+                id=template.id,
+                name=template.name,
+                description=template.description,
+                active=template.active,
+                branch_id=template.branch_id,
+                created_at=template.created_at,
+                updated_at=template.updated_at,
+                items_count=int(count or 0),
+            )
+        )
+    return results
+
+
+@router.post(
+    "/templates",
+    response_model=workshop_schema.WorkshopOrderTemplateOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_production_access)],
+)
+def create_template(
+    payload: workshop_schema.WorkshopOrderTemplateCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    branch = _get_workshop_branch(db)
+    template = WorkshopOrderTemplate(
+        name=payload.name,
+        description=payload.description,
+        active=payload.active,
+        branch_id=branch.id,
+        created_by_id=current_user.id,
+    )
+    db.add(template)
+    db.flush()
+    for item in payload.items:
+        if item.quantity <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be positive")
+        _ensure_workshop_product(db, branch.id, item.product_id)
+        db.add(
+            WorkshopOrderTemplateItem(
+                template_id=template.id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+            )
+        )
+    db.commit()
+    db.refresh(template)
+    return _serialize_template_detail(template, db)
+
+
+@router.get(
+    "/templates/{template_id}",
+    response_model=workshop_schema.WorkshopOrderTemplateOut,
+    dependencies=[Depends(require_production_access)],
+)
+def get_template(template_id: int, db: Session = Depends(get_db)):
+    branch = _get_workshop_branch(db)
+    template = _get_template(db, template_id)
+    if template.branch_id != branch.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден")
+    return _serialize_template_detail(template, db)
+
+
+@router.put(
+    "/templates/{template_id}",
+    response_model=workshop_schema.WorkshopOrderTemplateOut,
+    dependencies=[Depends(require_production_access)],
+)
+@router.patch(
+    "/templates/{template_id}",
+    response_model=workshop_schema.WorkshopOrderTemplateOut,
+    dependencies=[Depends(require_production_access)],
+)
+def update_template(
+    template_id: int,
+    payload: workshop_schema.WorkshopOrderTemplateUpdate,
+    db: Session = Depends(get_db),
+):
+    branch = _get_workshop_branch(db)
+    template = _get_template(db, template_id)
+    if template.branch_id != branch.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(template, field, value)
+    db.commit()
+    db.refresh(template)
+    return _serialize_template_detail(template, db)
+
+
+@router.post(
+    "/templates/{template_id}/items",
+    response_model=workshop_schema.WorkshopOrderTemplateItemOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_production_access)],
+)
+def add_template_item(
+    template_id: int,
+    payload: workshop_schema.WorkshopOrderTemplateItemIn,
+    db: Session = Depends(get_db),
+):
+    branch = _get_workshop_branch(db)
+    template = _get_template(db, template_id)
+    if template.branch_id != branch.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден")
+    if payload.quantity <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be positive")
+    product = _ensure_workshop_product(db, branch.id, payload.product_id)
+    item = WorkshopOrderTemplateItem(
+        template_id=template.id,
+        product_id=payload.product_id,
+        quantity=payload.quantity,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return workshop_schema.WorkshopOrderTemplateItemOut(
+        id=item.id,
+        product_id=item.product_id,
+        quantity=item.quantity,
+        created_at=item.created_at,
+        product_name=product.name,
+        unit=product.unit,
+    )
+
+
+@router.put(
+    "/templates/{template_id}/items/{item_id}",
+    response_model=workshop_schema.WorkshopOrderTemplateItemOut,
+    dependencies=[Depends(require_production_access)],
+)
+@router.patch(
+    "/templates/{template_id}/items/{item_id}",
+    response_model=workshop_schema.WorkshopOrderTemplateItemOut,
+    dependencies=[Depends(require_production_access)],
+)
+def update_template_item(
+    template_id: int,
+    item_id: int,
+    payload: workshop_schema.WorkshopOrderTemplateItemUpdate,
+    db: Session = Depends(get_db),
+):
+    branch = _get_workshop_branch(db)
+    template = _get_template(db, template_id)
+    if template.branch_id != branch.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден")
+    item = (
+        db.query(WorkshopOrderTemplateItem)
+        .filter(WorkshopOrderTemplateItem.id == item_id, WorkshopOrderTemplateItem.template_id == template.id)
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Материал не найден")
+    if payload.quantity <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be positive")
+    item.quantity = payload.quantity
+    db.commit()
+    db.refresh(item)
+    product = item.product or db.get(Product, item.product_id)
+    return workshop_schema.WorkshopOrderTemplateItemOut(
+        id=item.id,
+        product_id=item.product_id,
+        quantity=item.quantity,
+        created_at=item.created_at,
+        product_name=product.name if product else None,
+        unit=product.unit if product else None,
+    )
+
+
+@router.delete(
+    "/templates/{template_id}/items/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_production_access)],
+)
+def delete_template_item(template_id: int, item_id: int, db: Session = Depends(get_db)):
+    branch = _get_workshop_branch(db)
+    template = _get_template(db, template_id)
+    if template.branch_id != branch.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден")
+    item = (
+        db.query(WorkshopOrderTemplateItem)
+        .filter(WorkshopOrderTemplateItem.id == item_id, WorkshopOrderTemplateItem.template_id == template.id)
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Материал не найден")
+    db.delete(item)
+    db.commit()
+    return None
+
+
+@router.delete(
+    "/templates/{template_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_production_access)],
+)
+def delete_template(template_id: int, db: Session = Depends(get_db)):
+    branch = _get_workshop_branch(db)
+    template = _get_template(db, template_id)
+    if template.branch_id != branch.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден")
+    db.delete(template)
+    db.commit()
+    return None
 
 
 def _get_order(db: Session, order_id: int) -> WorkshopOrder:
@@ -291,6 +634,7 @@ def _serialize_order_detail(order: WorkshopOrder, db: Session) -> workshop_schem
         updated_at=order.updated_at,
         closed_at=order.closed_at,
         branch_id=order.branch_id,
+        template_id=order.template_id,
         photo=order.photo,
         paid_amount=order.paid_amount,
         materials=material_rows,
