@@ -3,7 +3,20 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional, TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import MovementStatus
@@ -157,6 +170,21 @@ class Expense(Base, TimestampMixin):
 
     created_by: Mapped["User"] = relationship("User")
     branch: Mapped[Optional[Branch]] = relationship("Branch")
+
+
+class SalaryPayment(Base):
+    __tablename__ = "salary_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_by_admin_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    payment_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    employee: Mapped["User"] = relationship("User", foreign_keys=[employee_id])
+    created_by: Mapped["User"] = relationship("User", foreign_keys=[created_by_admin_id])
 
 
 class ProductionOrder(Base, TimestampMixin):

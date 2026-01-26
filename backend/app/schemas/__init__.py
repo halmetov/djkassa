@@ -15,6 +15,7 @@ from .movements import *  # noqa: F401,F403
 from .users import *  # noqa: F401,F403
 from .debts import *  # noqa: F401,F403
 from .expenses import *  # noqa: F401,F403
+from .salary_payments import *  # noqa: F401,F403
 from .production import *  # noqa: F401,F403
 from .stock import *  # noqa: F401,F403
 from .workshop import *  # noqa: F401,F403

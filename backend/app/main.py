@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 from app.api import (
     routes_auth,
+    routes_admin,
     routes_branches,
     routes_categories,
     routes_clients,
@@ -170,6 +171,7 @@ app.user_middleware = sorted(
 app.middleware_stack = app.build_middleware_stack()
 
 app.include_router(routes_auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(routes_admin.router, prefix="/api/admin", tags=["admin"])
 manager_restricted = [Depends(reject_manager)]
 wholesale_restricted = [Depends(reject_manager), Depends(reject_production_manager)]
 app.include_router(routes_users.router, prefix="/api/users", tags=["users"], dependencies=manager_restricted)

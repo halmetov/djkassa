@@ -19,6 +19,7 @@ from app.models.entities import (
     Product,
     Return,
     ReturnItem,
+    SalaryPayment,
     Sale,
     SaleItem,
     User,
@@ -270,13 +271,21 @@ async def get_profit_report(
         )
     ).scalar_one()
 
-    profit_total = sales_total_value - cogs_total - float(expenses_total or 0)
+    salary_expenses_total = db.execute(
+        select(func.coalesce(func.sum(SalaryPayment.amount), 0)).where(
+            SalaryPayment.created_at >= start_dt,
+            SalaryPayment.created_at <= end_dt,
+        )
+    ).scalar_one()
+
+    expenses_total_value = float(expenses_total or 0) + float(salary_expenses_total or 0)
+    profit_total = sales_total_value - cogs_total - expenses_total_value
 
     return report_schema.ProfitReportResponse(
         month=month,
         sales_total=sales_total_value,
         cogs_total=cogs_total,
-        expenses_total=float(expenses_total or 0),
+        expenses_total=expenses_total_value,
         profit=profit_total,
     )
 
