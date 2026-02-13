@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from app.auth.security import get_current_user, require_employee
+from app.auth.security import get_current_user, require_admin, require_employee
 from app.core.enums import UserRole
 from app.database.session import get_db
 from app.models.entities import Branch, Income, IncomeItem, Product
@@ -102,12 +102,29 @@ async def create_income(
 
 @router.delete(
     "/{income_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_employee)],
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin)],
 )
 async def delete_income(
     income_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    raise HTTPException(status_code=403, detail="Удаление приходов запрещено")
+    income = db.execute(
+        select(Income).where(Income.id == income_id).options(selectinload(Income.items))
+    ).scalar_one_or_none()
+    if not income:
+        raise HTTPException(status_code=404, detail="Приход не найден")
+
+    try:
+        for item in income.items:
+            product = db.get(Product, item.product_id)
+            if product:
+                product.quantity -= item.quantity
+            adjust_stock(db, income.branch_id, item.product_id, -item.quantity, allow_negative=True)
+        db.delete(income)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return {"status": "ok"}

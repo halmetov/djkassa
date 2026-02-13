@@ -81,7 +81,7 @@ export const Layout = () => {
   }, [navigate]);
 
   useEffect(() => {
-    if (user?.role === "employee" && !employeeAllowedRoutes.includes(location.pathname)) {
+    if (user?.role === "employee" && !isPathAllowed(location.pathname, employeeAllowedRoutes)) {
       navigate("/pos", { replace: true });
     }
     if (user?.role === "production_manager" && !isPathAllowed(location.pathname, productionManagerAllowedRoutes)) {

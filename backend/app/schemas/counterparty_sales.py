@@ -42,6 +42,7 @@ class CounterpartySaleSummary(BaseModel):
     counterparty_id: Optional[int] = None
     counterparty_name: Optional[str] = None
     counterparty_company_name: Optional[str] = None
+    counterparty_phone: Optional[str] = None
     total_amount: float
     created_by_id: Optional[int] = None
     created_by_name: Optional[str] = None

@@ -12,6 +12,7 @@ import Branches from "./pages/Branches";
 import Clients from "./pages/Clients";
 import Counterparties from "./pages/Counterparties";
 import CounterpartySales from "./pages/CounterpartySales";
+import CounterpartySalePrint from "./pages/CounterpartySalePrint";
 import Income from "./pages/Income";
 import POS from "./pages/POS";
 import Warehouse from "./pages/Warehouse";
@@ -48,6 +49,7 @@ const App = () => (
             <Route path="/warehouse" element={<Warehouse />} />
             <Route path="/pos" element={<POS />} />
             <Route path="/counterparty-sales" element={<CounterpartySales />} />
+            <Route path="/counterparty-sales/:id/print" element={<CounterpartySalePrint />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/reports/profit" element={<ProfitReport />} />
             <Route path="/returns" element={<Returns />} />

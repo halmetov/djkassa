@@ -103,3 +103,33 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  body {
+    background: white;
+  }
+
+  header,
+  aside,
+  .no-print {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  .print-page {
+    padding: 0 !important;
+  }
+
+  .print-container {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

@@ -30,6 +30,7 @@ type CounterpartySaleSummary = {
   counterparty_id?: number | null;
   counterparty_name?: string | null;
   counterparty_company_name?: string | null;
+  counterparty_phone?: string | null;
   total_amount: number;
   created_by_name?: string | null;
 };
@@ -397,9 +398,14 @@ export default function CounterpartySales() {
               </div>
               <div className="flex flex-col items-start gap-2 md:flex-row md:items-center">
                 <div className="text-lg font-semibold">{formatAmount(sale.total_amount)} ₸</div>
-                <Button variant="outline" onClick={() => openDetails(sale.id)}>
-                  Подробнее
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => openDetails(sale.id)}>
+                    Подробнее
+                  </Button>
+                  <Button variant="secondary" onClick={() => window.open(`/counterparty-sales/${sale.id}/print`, "_blank")}>
+                    Печать
+                  </Button>
+                </div>
               </div>
             </div>
           ))}

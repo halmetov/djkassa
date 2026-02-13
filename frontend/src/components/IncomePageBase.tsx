@@ -26,6 +26,8 @@ interface IncomePageBaseProps {
   fetchProducts: () => Promise<IncomeProduct[]>;
   fetchIncomes: (branchId?: number) => Promise<IncomeRecord[]>;
   submitIncome: (payload: { branch_id: number; items: IncomeSubmitItem[] }) => Promise<void>;
+  deleteIncome?: (incomeId: number) => Promise<void>;
+  canDelete?: boolean;
   fixedBranchId?: number;
   fixedBranchName?: string;
 }
@@ -38,6 +40,8 @@ export function IncomePageBase({
   fetchProducts,
   fetchIncomes,
   submitIncome,
+  deleteIncome,
+  canDelete = false,
   fixedBranchId,
   fixedBranchName,
 }: IncomePageBaseProps) {
@@ -243,6 +247,20 @@ export function IncomePageBase({
 
   const getProductName = (id: number) => products.find((product) => product.id === id)?.name || `#${id}`;
   const getBranchName = (id: number) => branches.find((branch) => branch.id === id)?.name || fixedBranchName || `Филиал ${id}`;
+
+  const handleDeleteIncome = async (incomeId: number) => {
+    if (!deleteIncome) return;
+    const confirmed = window.confirm("Удалить приход? Остатки будут уменьшены.");
+    if (!confirmed) return;
+    try {
+      await deleteIncome(incomeId);
+      toast.success("Приход удален");
+      loadIncomes();
+    } catch (error) {
+      console.error(error);
+      toast.error("Не удалось удалить приход");
+    }
+  };
 
   const ProductCombobox = ({
     value,
@@ -551,6 +569,7 @@ export function IncomePageBase({
                     <TableHead>Дата</TableHead>
                     <TableHead>Филиал</TableHead>
                     <TableHead>Товары</TableHead>
+                    {canDelete && <TableHead className="w-[120px]">Действия</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -567,6 +586,13 @@ export function IncomePageBase({
                           ))}
                         </ul>
                       </TableCell>
+                      {canDelete && (
+                        <TableCell>
+                          <Button variant="destructive" size="sm" onClick={() => handleDeleteIncome(income.id)}>
+                            Удалить
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
