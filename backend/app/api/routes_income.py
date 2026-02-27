@@ -52,7 +52,7 @@ async def list_income(
     current_user: User = Depends(get_current_user),
 ):
     role_value = current_user.role.value if hasattr(current_user.role, "value") else current_user.role
-    target_branch_id = _resolve_branch(branch_id, current_user, db) if branch_id or role_value in {UserRole.EMPLOYEE.value, UserRole.PRODUCTION_MANAGER.value} else None
+    target_branch_id = _resolve_branch(branch_id, current_user, db) if branch_id or role_value in {UserRole.EMPLOYEE.value, UserRole.PRODUCTION_MANAGER.value, UserRole.MANAGER.value} else None
     query = select(Income).order_by(Income.created_at.desc())
     if target_branch_id is not None:
         query = query.where(Income.branch_id == target_branch_id)

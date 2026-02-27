@@ -7,7 +7,7 @@ export default function WorkshopIncome() {
     return [branch];
   };
 
-  const fetchProducts = () => apiGet<IncomeProduct[]>("/api/workshop/income/products");
+  const fetchProducts = () => apiGet<IncomeProduct[]>("/api/workshop/products?limit=2000");
   const fetchIncomes = (branchId?: number) =>
     apiGet<IncomeRecord[]>(`/api/income${branchId ? `?branch_id=${branchId}` : ""}`);
 

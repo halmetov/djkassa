@@ -7,7 +7,7 @@ class Stock(BaseModel):
     id: int
     branch_id: int
     product_id: int
-    quantity: int
+    quantity: float
     created_at: datetime
     updated_at: datetime
 
@@ -19,5 +19,5 @@ class LowStockItem(BaseModel):
     id: int
     name: str
     branch: str
-    quantity: int
+    quantity: float
     limit: int

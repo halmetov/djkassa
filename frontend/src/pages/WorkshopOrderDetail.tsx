@@ -38,10 +38,13 @@ interface Order {
   amount: number;
   status: string;
   customer_name?: string;
+  quantity?: number;
   materials: Material[];
   payouts: Payout[];
   closed_at?: string | null;
   paid_amount?: number | null;
+  debt_amount?: number | null;
+  customer_id?: number | null;
   photo?: string | null;
 }
 
@@ -82,8 +85,14 @@ export default function WorkshopOrderDetail() {
   const [paymentNote, setPaymentNote] = useState("");
   const [paidAmount, setPaidAmount] = useState("0");
   const [closeNote, setCloseNote] = useState("");
+  const [closeInDebt, setCloseInDebt] = useState(false);
+  const [closeDebtAmount, setCloseDebtAmount] = useState("0");
+  const [closeCustomerId, setCloseCustomerId] = useState("");
+  const [closeCustomerName, setCloseCustomerName] = useState("");
+  const [closeCustomerPhone, setCloseCustomerPhone] = useState("");
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [customers, setCustomers] = useState<Array<{id:number; name?:string}>>([]);
 
   const load = async () => {
     try {
@@ -98,6 +107,7 @@ export default function WorkshopOrderDetail() {
   useEffect(() => {
     if (orderId) {
       load();
+      apiGet<Array<{id:number; name?:string}>>("/api/workshop/customers?active=true").then(setCustomers).catch(() => undefined);
     }
   }, [orderId]);
 
@@ -185,8 +195,14 @@ export default function WorkshopOrderDetail() {
 
   const closeOrder = async () => {
     try {
+      const calculatedDebt = Math.max(0, (Number(order?.amount) || 0) - (Number(paidAmount) || 0));
+      const debt = closeInDebt ? (Number(closeDebtAmount) || calculatedDebt) : 0;
       await apiPost(`/api/workshop/orders/${orderId}/close`, {
         paid_amount: Number(paidAmount) || 0,
+        debt_amount: debt,
+        customer_id: order?.customer_id || (closeCustomerId ? Number(closeCustomerId) : undefined),
+        customer_new_name: closeCustomerName || undefined,
+        customer_new_phone: closeCustomerPhone || undefined,
         note: closeNote || undefined,
       });
       toast.success("Заказ закрыт");
@@ -206,6 +222,7 @@ export default function WorkshopOrderDetail() {
         description: order.description,
         customer_name: order.customer_name,
         status: order.status,
+        quantity: order.quantity || 1,
       });
       toast.success("Заказ обновлен");
     } catch (error: any) {
@@ -258,6 +275,7 @@ export default function WorkshopOrderDetail() {
             <span>Статус: {order.status}</span>
             {order.closed_at && <span>Закрыт: {new Date(order.closed_at).toLocaleString()}</span>}
             {order.paid_amount != null && <span>Оплачено клиентом: {order.paid_amount}</span>}
+            {order.debt_amount != null && <span>Долг: {order.debt_amount}</span>}
           </div>
           <Input value={order.title} onChange={(e) => setOrder({ ...order, title: e.target.value })} disabled={isClosed} />
           <Input
@@ -270,6 +288,13 @@ export default function WorkshopOrderDetail() {
             placeholder="Статус"
             value={order.status}
             onChange={(e) => setOrder({ ...order, status: e.target.value })}
+            disabled={isClosed}
+          />
+          <Input
+            type="number"
+            min={1}
+            value={order.quantity || 1}
+            onChange={(e) => setOrder({ ...order, quantity: Number(e.target.value) })}
             disabled={isClosed}
           />
           <Input
@@ -307,6 +332,11 @@ export default function WorkshopOrderDetail() {
                 variant="secondary"
                 onClick={() => {
                   setPaidAmount(String(order.amount || 0));
+                  setCloseInDebt(false);
+                  setCloseDebtAmount("0");
+                  setCloseCustomerId("");
+                  setCloseCustomerName("");
+                  setCloseCustomerPhone("");
                   setCloseDialogOpen(true);
                 }}
               >
@@ -505,8 +535,37 @@ export default function WorkshopOrderDetail() {
               placeholder="Оплачено"
               type="number"
               value={paidAmount}
-              onChange={(e) => setPaidAmount(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setPaidAmount(next);
+                const calculatedDebt = Math.max(0, (Number(order?.amount) || 0) - (Number(next) || 0));
+                setCloseDebtAmount(String(calculatedDebt));
+              }}
             />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={closeInDebt} onChange={(e) => setCloseInDebt(e.target.checked)} />
+              В долг
+            </label>
+            {closeInDebt && (
+              <>
+                <Input
+                  placeholder="Сумма долга"
+                  type="number"
+                  value={closeDebtAmount}
+                  onChange={(e) => setCloseDebtAmount(e.target.value)}
+                />
+                {!order.customer_id && (
+                  <>
+                    <select className="border rounded h-10 px-3 bg-background" value={closeCustomerId} onChange={(e) => setCloseCustomerId(e.target.value)}>
+                      <option value="">Выбрать заказчика</option>
+                      {customers.map((c)=><option key={c.id} value={c.id}>{c.name || `#${c.id}`}</option>)}
+                    </select>
+                    <Input placeholder="Новый заказчик" value={closeCustomerName} onChange={(e)=>setCloseCustomerName(e.target.value)} />
+                    <Input placeholder="Телефон" value={closeCustomerPhone} onChange={(e)=>setCloseCustomerPhone(e.target.value)} />
+                  </>
+                )}
+              </>
+            )}
             <Textarea placeholder="Комментарий" value={closeNote} onChange={(e) => setCloseNote(e.target.value)} />
           </div>
           <DialogFooter>

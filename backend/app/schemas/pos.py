@@ -13,7 +13,7 @@ class PosProduct(BaseModel):
     unit: str
     branch_id: Optional[int]
     branch_name: Optional[str]
-    quantity: int
+    quantity: float
     updated_at: Optional[datetime] = None
 
     class Config:

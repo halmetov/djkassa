@@ -13,11 +13,18 @@ import { Trash2 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export type IncomeBranch = { id: number; name: string; active?: boolean };
-export type IncomeProduct = { id: number; name: string; barcode?: string | null; purchase_price?: number; sale_price?: number };
+export type IncomeProduct = { id: number; name: string; unit?: string | null; barcode?: string | null; purchase_price?: number; sale_price?: number };
 export type IncomeItem = { id: number; product_id: number; quantity: number; purchase_price: number; sale_price: number };
 export type IncomeRecord = { id: number; branch_id: number; created_at: string; items: IncomeItem[] };
 export type IncomeSubmitItem = { product_id: number; quantity: number; purchase_price: number; sale_price: number };
 
+
+
+const formatQuantity = (value: number | string) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return String(value);
+  return num.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
+};
 interface IncomePageBaseProps {
   title: string;
   description: string;
@@ -246,6 +253,7 @@ export function IncomePageBase({
   };
 
   const getProductName = (id: number) => products.find((product) => product.id === id)?.name || `#${id}`;
+  const getProductUnit = (id: number) => products.find((product) => product.id === id)?.unit || "шт";
   const getBranchName = (id: number) => branches.find((branch) => branch.id === id)?.name || fixedBranchName || `Филиал ${id}`;
 
   const handleDeleteIncome = async (incomeId: number) => {
@@ -384,6 +392,8 @@ export function IncomePageBase({
                 type="number"
                 value={formData.quantity}
                 inputMode="decimal"
+                step="0.001"
+                min="0.001"
                 onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
               />
             </div>
@@ -468,6 +478,8 @@ export function IncomePageBase({
                         <Input
                           type="number"
                           value={item.quantity}
+                          step="0.001"
+                          min="0.001"
                           onChange={(e) => updateInvoiceItem(index, "quantity", e.target.value)}
                           placeholder="Количество"
                         />
@@ -514,6 +526,8 @@ export function IncomePageBase({
                           <Input
                             type="number"
                             value={item.quantity}
+                            step="0.001"
+                            min="0.001"
                             onChange={(e) => updateInvoiceItem(index, "quantity", e.target.value)}
                           />
                         </TableCell>
@@ -581,7 +595,7 @@ export function IncomePageBase({
                         <ul className="text-sm space-y-1">
                           {income.items.map((item) => (
                             <li key={item.id}>
-                              {getProductName(item.product_id)} — {item.quantity} шт. по {item.purchase_price} ₸ / {item.sale_price} ₸
+                              {getProductName(item.product_id)} — {formatQuantity(item.quantity)} {getProductUnit(item.product_id)} по {item.purchase_price} ₸ / {item.sale_price} ₸
                             </li>
                           ))}
                         </ul>

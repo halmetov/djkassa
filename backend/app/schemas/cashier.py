@@ -11,7 +11,7 @@ class CashierProduct(BaseModel):
     unit: Optional[str] = None
     image_url: Optional[str] = None
     photo: Optional[str] = None
-    available_qty: int
+    available_qty: float
     category: Optional[str] = None
     rating: Optional[int] = 0
 

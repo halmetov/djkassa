@@ -28,7 +28,7 @@ type Employee = {
   id: number;
   name: string;
   login: string;
-  role: "admin" | "employee" | "manager";
+  role: "admin" | "employee" | "production_manager" | "manager";
   active: boolean;
   branch_id: number | null;
 };
@@ -205,7 +205,8 @@ export default function Employees() {
               <SelectContent>
                 <SelectItem value="admin">Администратор</SelectItem>
                 <SelectItem value="employee">Продавец</SelectItem>
-                <SelectItem value="manager">Менеджер</SelectItem>
+                <SelectItem value="production_manager">Менеджер производства (старый)</SelectItem>
+                <SelectItem value="manager">Менеджер производства</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -280,14 +281,15 @@ export default function Employees() {
                       <SelectContent>
                         <SelectItem value="admin">Администратор</SelectItem>
                         <SelectItem value="employee">Продавец</SelectItem>
-                        <SelectItem value="manager">Менеджер</SelectItem>
+                        <SelectItem value="production_manager">Менеджер производства (старый)</SelectItem>
+                <SelectItem value="manager">Менеджер производства</SelectItem>
                       </SelectContent>
                     </Select>
                   ) : (
                     employee.role === "admin"
                       ? "Администратор"
-                      : employee.role === "manager"
-                        ? "Менеджер"
+                      : employee.role === "manager" || employee.role === "production_manager"
+                        ? "Менеджер производства"
                         : "Продавец"
                   )}
                   </TableCell>

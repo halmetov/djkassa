@@ -4,10 +4,16 @@ from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, field_validator
 from pydantic.config import ConfigDict
 
 from app.schemas import income as income_schema
+
+
+def _to_decimal(value: Decimal | float | int | str | None) -> Decimal | None:
+    if value is None:
+        return None
+    return Decimal(str(value))
 
 
 class WorkshopEmployeeBase(BaseModel):
@@ -61,6 +67,62 @@ class WorkshopExpenseOut(WorkshopExpenseBase):
         return float(value)
 
 
+
+
+class WorkshopOrderTypeBase(BaseModel):
+    name: str
+    active: bool = True
+
+
+class WorkshopOrderTypeCreate(WorkshopOrderTypeBase):
+    pass
+
+
+class WorkshopOrderTypeUpdate(BaseModel):
+    name: Optional[str] = None
+    active: Optional[bool] = None
+
+
+class WorkshopOrderTypeOut(WorkshopOrderTypeBase):
+    id: int
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkshopCustomerBase(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    debt: Optional[Decimal] = Field(default=Decimal("0"))
+    active: bool = True
+
+
+class WorkshopCustomerCreate(WorkshopCustomerBase):
+    pass
+
+
+class WorkshopCustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    debt: Optional[Decimal] = None
+    active: Optional[bool] = None
+
+
+class WorkshopCustomerOut(WorkshopCustomerBase):
+    id: int
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("debt")
+    def serialize_debt(self, value: Decimal | float | None) -> float | None:
+        if value is None:
+            return None
+        return float(value)
+
+
 class WorkshopOrderBase(BaseModel):
     title: str
     amount: Decimal = Field(default=Decimal("0"))
@@ -69,9 +131,17 @@ class WorkshopOrderBase(BaseModel):
     status: Optional[str] = None
     photo: Optional[str] = None
     paid_amount: Optional[Decimal] = None
+    order_type_id: Optional[int] = None
+    quantity: Optional[int] = Field(default=1, ge=1)
+    unit_price: Optional[Decimal] = None
+    customer_id: Optional[int] = None
+    customer_new_name: Optional[str] = None
+    customer_new_phone: Optional[str] = None
+    debt_amount: Optional[Decimal] = None
 
 
 class WorkshopOrderCreate(WorkshopOrderBase):
+    order_type_id: Optional[int] = None
     template_id: Optional[int] = None
     materials: Optional[list["WorkshopMaterialCreate"]] = None
 
@@ -82,6 +152,13 @@ class WorkshopOrderUpdate(BaseModel):
     customer_name: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = None
+    order_type_id: Optional[int] = None
+    quantity: Optional[int] = Field(default=None, ge=1)
+    unit_price: Optional[Decimal] = None
+    customer_id: Optional[int] = None
+    customer_new_name: Optional[str] = None
+    customer_new_phone: Optional[str] = None
+    debt_amount: Optional[Decimal] = None
 
 
 class WorkshopOrderOut(WorkshopOrderBase):
@@ -98,14 +175,20 @@ class WorkshopOrderOut(WorkshopOrderBase):
 
 class WorkshopMaterialCreate(BaseModel):
     product_id: int
-    quantity: Decimal
+    quantity: Decimal = Field(gt=0)
+    per_unit_qty: Optional[Decimal] = Field(default=None, gt=0)
     unit: Optional[str] = None
+
+    _validate_quantity = field_validator("quantity", mode="before")(_to_decimal)
+    _validate_per_unit = field_validator("per_unit_qty", mode="before")(_to_decimal)
 
 
 class WorkshopMaterialOut(BaseModel):
     id: int
     product_id: int
     quantity: Decimal
+    per_unit_qty: Optional[Decimal] = None
+    total_qty: Optional[Decimal] = None
     unit: Optional[str]
     created_at: Optional[datetime]
 
@@ -115,6 +198,7 @@ class WorkshopMaterialOut(BaseModel):
 class WorkshopPayoutCreate(BaseModel):
     employee_id: int
     amount: Decimal = Field(ge=0)
+    per_unit_amount: Optional[Decimal] = Field(default=None, ge=0)
     note: Optional[str] = None
 
 
@@ -122,6 +206,8 @@ class WorkshopPayoutOut(BaseModel):
     id: int
     employee_id: int
     amount: Decimal
+    per_unit_amount: Optional[Decimal] = None
+    total_amount: Optional[Decimal] = None
     note: Optional[str]
     created_at: Optional[datetime]
 
@@ -146,11 +232,15 @@ class WorkshopOrderDetail(WorkshopOrderOut):
 
 class WorkshopOrderTemplateItemIn(BaseModel):
     product_id: int
-    quantity: Decimal
+    quantity: Decimal = Field(gt=0)
+
+    _validate_quantity = field_validator("quantity", mode="before")(_to_decimal)
 
 
 class WorkshopOrderTemplateItemUpdate(BaseModel):
-    quantity: Decimal
+    quantity: Decimal = Field(gt=0)
+
+    _validate_quantity = field_validator("quantity", mode="before")(_to_decimal)
 
 
 class WorkshopOrderTemplateItemOut(BaseModel):
@@ -168,6 +258,9 @@ class WorkshopOrderTemplateBase(BaseModel):
     name: str
     description: Optional[str] = None
     active: bool = True
+    amount: Optional[Decimal] = Field(default=Decimal("0"))
+    order_type_id: Optional[int] = None
+    photo: Optional[str] = None
 
 
 class WorkshopOrderTemplateCreate(WorkshopOrderTemplateBase):
@@ -178,6 +271,9 @@ class WorkshopOrderTemplateUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     active: Optional[bool] = None
+    amount: Optional[Decimal] = None
+    order_type_id: Optional[int] = None
+    photo: Optional[str] = None
 
 
 class WorkshopOrderTemplateOut(WorkshopOrderTemplateBase):
@@ -196,6 +292,7 @@ class WorkshopOrderTemplateListOut(BaseModel):
     name: str
     description: Optional[str] = None
     active: bool
+    photo: Optional[str] = None
     branch_id: int
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
@@ -206,6 +303,11 @@ class WorkshopOrderTemplateListOut(BaseModel):
 
 class WorkshopClosePayload(BaseModel):
     paid_amount: Decimal = Field(ge=0)
+    debt_amount: Optional[Decimal] = Field(default=None, ge=0)
+    payment_method: Optional[str] = None
+    customer_id: Optional[int] = None
+    customer_new_name: Optional[str] = None
+    customer_new_phone: Optional[str] = None
     note: Optional[str] = None
 
 

@@ -53,12 +53,14 @@ const menuItems = [
 
 const productionMenuItems = [
   { title: "Заказы", url: "/workshop/orders", icon: FileText },
-  { title: "Частые заказы", url: "/workshop/templates", icon: FileText, roles: ["admin", "production_manager"] },
+  { title: "Частые заказы", url: "/workshop/templates", icon: FileText },
+  { title: "Тип заказа", url: "/workshop/order-types", icon: Settings },
+  { title: "Заказчики", url: "/workshop/customers", icon: Users },
   { title: "Склад (Цех)", url: "/workshop/stock", icon: Warehouse },
   { title: "Приход (Цех)", url: "/workshop/income", icon: TrendingDown },
   { title: "Производственные расходы", url: "/workshop/expenses", icon: HandCoins },
   { title: "Сотрудники (Цех)", url: "/workshop/employees", icon: Users },
-  { title: "Зарплата", url: "/workshop/salary", icon: HandCoins, roles: ["admin", "production_manager"] },
+  { title: "Зарплата", url: "/workshop/salary", icon: HandCoins },
   { title: "Отчет (Цех)", url: "/workshop/report", icon: FileText },
 ];
 

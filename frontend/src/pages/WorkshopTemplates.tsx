@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiDelete, apiGet, apiPost, apiPut } from "@/api/client";
+import { apiDelete, apiGet, apiPost, apiPut, apiUpload } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
+import { Label } from "@/components/ui/label";
 
 interface TemplateListItem {
   id: number;
@@ -15,6 +16,7 @@ interface TemplateListItem {
   description?: string;
   active: boolean;
   items_count: number;
+  photo?: string;
 }
 
 interface TemplateItem {
@@ -30,8 +32,13 @@ interface TemplateDetail {
   name: string;
   description?: string;
   active: boolean;
+  amount?: number;
+  order_type_id?: number;
+  photo?: string;
   items: TemplateItem[];
 }
+
+interface DictOption { id: number; name?: string }
 
 interface StockProduct {
   id: number;
@@ -48,11 +55,14 @@ export default function WorkshopTemplates() {
   const [createName, setCreateName] = useState("");
   const [createDescription, setCreateDescription] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateDetail | null>(null);
+  const [createAmount, setCreateAmount] = useState("0");
   const [materialSearch, setMaterialSearch] = useState("");
   const [materialOpen, setMaterialOpen] = useState(false);
   const [materialOptions, setMaterialOptions] = useState<StockProduct[]>([]);
   const [selectedMaterial, setSelectedMaterial] = useState<StockProduct | null>(null);
   const [materialQty, setMaterialQty] = useState("1");
+  const [orderTypes, setOrderTypes] = useState<DictOption[]>([]);
+  const [createOrderTypeId, setCreateOrderTypeId] = useState("");
 
   const loadTemplates = async () => {
     try {
@@ -76,6 +86,7 @@ export default function WorkshopTemplates() {
 
   useEffect(() => {
     loadTemplates();
+    apiGet<DictOption[]>("/api/workshop/order-types?active=true").then(setOrderTypes).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -99,11 +110,15 @@ export default function WorkshopTemplates() {
       const created = await apiPost<TemplateDetail>("/api/workshop/templates", {
         name: createName,
         description: createDescription || undefined,
+        amount: Number(createAmount) || 0,
+        order_type_id: createOrderTypeId ? Number(createOrderTypeId) : undefined,
         items: [],
       });
       toast.success("Шаблон создан");
       setCreateName("");
       setCreateDescription("");
+      setCreateAmount("0");
+      setCreateOrderTypeId("");
       setSelectedTemplate(created);
       loadTemplates();
     } catch (error: any) {
@@ -118,12 +133,28 @@ export default function WorkshopTemplates() {
         name: selectedTemplate.name,
         description: selectedTemplate.description || undefined,
         active: selectedTemplate.active,
+        amount: selectedTemplate.amount || 0,
       });
       setSelectedTemplate(null);
       toast.success("Шаблон обновлен");
       loadTemplates();
     } catch (error: any) {
       toast.error(error?.message || "Не удалось обновить шаблон");
+    }
+  };
+
+
+  const uploadTemplatePhoto = async (file: File) => {
+    if (!selectedTemplate) return;
+    try {
+      const formData = new FormData();
+      formData.append("photo_file", file);
+      const updated = await apiUpload<TemplateDetail>(`/api/workshop/templates/${selectedTemplate.id}/photo`, formData);
+      setSelectedTemplate(updated);
+      loadTemplates();
+      toast.success("Фото шаблона обновлено");
+    } catch (error: any) {
+      toast.error(error?.message || "Не удалось загрузить фото шаблона");
     }
   };
 
@@ -199,17 +230,11 @@ export default function WorkshopTemplates() {
         </CardHeader>
         <CardContent>
           <form className="grid gap-3" onSubmit={createTemplate}>
-            <Input
-              placeholder="Название шаблона"
-              value={createName}
-              onChange={(event) => setCreateName(event.target.value)}
-              required
-            />
-            <Textarea
-              placeholder="Описание"
-              value={createDescription}
-              onChange={(event) => setCreateDescription(event.target.value)}
-            />
+            <div className="grid gap-1"><Label>Название заказа</Label><Input value={createName} onChange={(event) => setCreateName(event.target.value)} required /></div>
+            <div className="grid gap-1"><Label>Сумма</Label><Input type="number" step="0.01" value={createAmount} onChange={(event) => setCreateAmount(event.target.value)} /></div>
+            <div className="grid gap-1"><Label>Тип заказа</Label><select className="border rounded h-10 px-3 bg-background" value={createOrderTypeId} onChange={(event) => setCreateOrderTypeId(event.target.value)}><option value="">Не выбран</option>{orderTypes.map((item)=><option key={item.id} value={item.id}>{item.name || `#${item.id}`}</option>)}</select></div>
+            <div className="grid gap-1"><Label>Описание</Label><Textarea value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} /></div>
+            <div className="grid gap-1"><Label>Фото</Label><Input placeholder="Сначала создайте шаблон, затем загрузите фото в режиме редактирования" disabled /></div>
             <Button type="submit">Создать шаблон</Button>
           </form>
         </CardContent>
@@ -239,6 +264,9 @@ export default function WorkshopTemplates() {
                   </div>
                   {template.description && (
                     <div className="text-xs text-muted-foreground">{template.description}</div>
+                  )}
+                  {template.photo && (
+                    <img src={template.photo} alt={template.name} className="mt-2 h-12 w-12 rounded object-cover border" />
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -284,6 +312,21 @@ export default function WorkshopTemplates() {
                   }
                 />
                 <span className="text-sm">Активен</span>
+              </div>
+              {selectedTemplate.photo && (
+                <img src={selectedTemplate.photo} alt={selectedTemplate.name} className="h-28 w-28 rounded object-cover border" />
+              )}
+              <div className="grid gap-1">
+                <Label>Загрузить фото</Label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) uploadTemplatePhoto(file);
+                    event.currentTarget.value = "";
+                  }}
+                />
               </div>
               <Button onClick={updateTemplate}>Сохранить шаблон</Button>
             </div>
